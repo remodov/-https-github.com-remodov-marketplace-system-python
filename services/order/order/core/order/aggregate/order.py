@@ -6,6 +6,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
 from ...errors import invalid
+from .events import Event, OrderCreated, snapshots_of
 
 CURRENCY = "RUB"
 MAX_QUANTITY = 999
@@ -141,6 +142,7 @@ class Order:
         self._address = address
         self._created_at = created_at
         self._updated_at = updated_at
+        self._events: list[Event] = []
 
     @classmethod
     def create(
@@ -163,7 +165,9 @@ class Order:
             if item.product_id in seen:
                 raise invalid("VALIDATION_ERROR", f"Товар {item.product_id} повторяется в позициях заказа")
             seen.add(item.product_id)
-        return cls(id, customer_id, seller_id, Status.DRAFT, items, ZERO_RUB, address, now, now)
+        order = cls(id, customer_id, seller_id, Status.DRAFT, items, ZERO_RUB, address, now, now)
+        order._events.append(OrderCreated(id, customer_id, seller_id, order.total, snapshots_of(items), now))
+        return order
 
     @classmethod
     def restore(
@@ -225,3 +229,7 @@ class Order:
 
     def owned_by(self, customer_id: uuid.UUID) -> bool:
         return self._customer_id == customer_id
+
+    def pull_events(self) -> list[Event]:
+        events, self._events = self._events, []
+        return events

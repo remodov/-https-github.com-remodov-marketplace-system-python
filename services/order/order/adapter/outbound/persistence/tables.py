@@ -52,3 +52,16 @@ idempotency_keys = Table(
     Column("order_id", Uuid, ForeignKey("orders.id"), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
 )
+
+outbox = Table(
+    "outbox",
+    metadata,
+    Column("id", Uuid, primary_key=True),
+    Column("aggregate_id", Uuid, nullable=False),
+    Column("aggregate_type", String(64), nullable=False),
+    Column("event_type", String(128), nullable=False),
+    Column("event_version", Integer, nullable=False),
+    Column("payload", postgresql.JSONB, nullable=False),
+    Column("occurred_at", DateTime(timezone=True), nullable=False),
+    Column("published_at", DateTime(timezone=True)),
+)

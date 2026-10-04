@@ -5,7 +5,15 @@ from dataclasses import dataclass
 from ...errors import invalid, not_found
 from ...security.principal import Principal
 from ..aggregate.order import Address, Item, Order
-from ..port.out import CatalogGateway, Clock, IdempotencyKeys, IdGenerator, OrderRepository, UnitOfWork
+from ..port.out import (
+    CatalogGateway,
+    Clock,
+    EventOutbox,
+    IdempotencyKeys,
+    IdGenerator,
+    OrderRepository,
+    UnitOfWork,
+)
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,7 @@ class CreateOrderHandler:
         orders: OrderRepository,
         catalog: CatalogGateway,
         keys: IdempotencyKeys,
+        outbox: EventOutbox,
         clock: Clock,
         ids: IdGenerator,
         uow: UnitOfWork,
@@ -47,6 +56,7 @@ class CreateOrderHandler:
         self.orders = orders
         self.catalog = catalog
         self.keys = keys
+        self.outbox = outbox
         self.clock = clock
         self.ids = ids
         self.uow = uow
@@ -62,6 +72,7 @@ class CreateOrderHandler:
         try:
             async with self.uow.begin():
                 await self.orders.insert(order)
+                await self.outbox.append(order.pull_events())
                 claimed = await self.keys.claim(
                     cmd.idempotency_key, cmd.request_hash, order.id, order.created_at
                 )

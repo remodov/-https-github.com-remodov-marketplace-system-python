@@ -1,9 +1,11 @@
 import uuid
 from collections.abc import Sequence
 from contextlib import AbstractAsyncContextManager
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
+from ..aggregate.events import Event
 from ..aggregate.order import Money, Order
 
 
@@ -37,3 +39,26 @@ class UnitOfWork(Protocol):
 class IdempotencyKeys(Protocol):
     async def find(self, key: str, request_hash: str) -> uuid.UUID | None: ...
     async def claim(self, key: str, request_hash: str, order_id: uuid.UUID, now: datetime) -> bool: ...
+
+
+@dataclass(frozen=True)
+class OutboxMessage:
+    id: uuid.UUID
+    aggregate_type: str
+    aggregate_id: uuid.UUID
+    event_type: str
+    event_version: int
+    payload: bytes
+    occurred_at: datetime
+
+
+@runtime_checkable
+class EventOutbox(Protocol):
+    async def append(self, events: Sequence[Event]) -> None: ...
+    async def unpublished(self, limit: int) -> list[OutboxMessage]: ...
+    async def mark_published(self, message_id: uuid.UUID, at: datetime) -> None: ...
+
+
+@runtime_checkable
+class ExternalEventPublisher(Protocol):
+    async def publish(self, message: OutboxMessage) -> None: ...

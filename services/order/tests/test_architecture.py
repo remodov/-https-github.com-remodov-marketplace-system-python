@@ -3,14 +3,19 @@ from pathlib import Path
 
 import order
 from order.adapter.outbound.catalog.client import CatalogClient
+from order.adapter.outbound.kafka.publisher import KafkaPublisher
 from order.adapter.outbound.persistence.idempotency_repository import SqlAlchemyIdempotencyKeys
 from order.adapter.outbound.persistence.order_repository import SqlAlchemyOrderRepository
+from order.adapter.outbound.persistence.outbox_repository import SqlAlchemyOutbox
 from order.adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from order.adapter.outbound.system.log_publisher import LogPublisher
 from order.adapter.outbound.system.system import SystemClock, UuidGenerator
 from order.bootstrap.wire import catalog_settings
 from order.core.order.port.out import (
     CatalogGateway,
     Clock,
+    EventOutbox,
+    ExternalEventPublisher,
     IdempotencyKeys,
     IdGenerator,
     OrderRepository,
@@ -31,6 +36,8 @@ FORBIDDEN_IN_CORE = (
     "jwt",
     "uvicorn",
     "httpx",
+    "aiokafka",
+    "orders_v1",
 )
 
 
@@ -102,6 +109,9 @@ async def test_adapters_satisfy_ports():
     assert isinstance(SqlAlchemyOrderRepository(sessions), OrderRepository)
     assert isinstance(SqlAlchemyIdempotencyKeys(sessions), IdempotencyKeys)
     assert isinstance(SqlAlchemyUnitOfWork(sessions), UnitOfWork)
+    assert isinstance(SqlAlchemyOutbox(sessions, UuidGenerator()), EventOutbox)
+    assert isinstance(LogPublisher(), ExternalEventPublisher)
+    assert isinstance(KafkaPublisher("localhost:9097", "marketplace.orders.v1"), ExternalEventPublisher)
     assert isinstance(SystemClock(), Clock)
     assert isinstance(UuidGenerator(), IdGenerator)
     catalog = CatalogClient(catalog_settings("http://localhost:8180"))

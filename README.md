@@ -14,10 +14,12 @@
 |---|---|---|
 | `services/catalog-starter` | карточки товаров, остатки, резерв, поиск | FastAPI, SQLAlchemy 2 (async), Alembic, Redis |
 | `services/catalog` | те же карточки по-взрослому: слои, спецификация, роли, владение, журнал администратора | FastAPI, SQLAlchemy 2 Core (async), Alembic, PyJWT, архитектурные тесты |
-| `services/order` | оформление заказов: агрегат `Order`, цены из каталога, клиент с таймаутами, повтором и размыкателем | FastAPI, SQLAlchemy 2 Core (async), Alembic, httpx, PyJWT |
+| `services/order` | оформление заказов: агрегат `Order`, цены из каталога, клиент с таймаутами, повтором и размыкателем, идемпотентность, outbox | FastAPI, SQLAlchemy 2 Core (async), Alembic, httpx, PyJWT, aiokafka |
+| `services/notification` | уведомления: потребитель событий заказа с защитой от повторной доставки | FastAPI, SQLAlchemy 2 Core (async), Alembic, aiokafka |
+| `contracts` | внешний контракт событий заказа: AsyncAPI, схемы и pydantic-пакет для продюсера и потребителей | AsyncAPI 3, pydantic |
 
-Дальше по плану появляются `services/payment`, `services/notification`,
-`services/bff`, `web` и `contracts` - по образцу Java- и Go-версий ([план](docs/practicum/PLAN.md)).
+Дальше по плану появляются `services/payment`, `services/bff` и `web` - по образцу Java- и Go-версий
+([план](docs/practicum/PLAN.md)).
 
 ## С чего начинать
 
@@ -47,13 +49,23 @@ python -m pytest -q
 uvicorn catalog.main:app --port 8180
 ```
 
-Сервис заказов из восьмого шага ставится так же и ходит в каталог на `8180`:
+Сервис заказов из восьмого шага ставится так же и ходит в каталог на `8180`; с десятого шага ему нужен
+пакет контракта событий из `contracts/`:
 
 ```bash
-pip install -e "services/order[dev]"
+pip install -e contracts/orders_v1 -e "services/order[dev]"
 cd services/order
 python -m pytest -q
 uvicorn order.main:app --port 8181
+```
+
+Сервис уведомлений из десятого шага читает события заказа из Kafka:
+
+```bash
+pip install -e "services/notification[dev]"
+cd services/notification
+python -m pytest -q
+uvicorn notification.main:app --port 8185
 ```
 
 ## Поднять стенд

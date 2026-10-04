@@ -3,7 +3,7 @@ import os
 import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Self
@@ -18,7 +18,8 @@ from order.adapter.outbound.catalog.client import CatalogSettings
 from order.bootstrap.app import create_app
 from order.bootstrap.config import Settings
 from order.bootstrap.wire import Deps, catalog_settings
-from order.core.order.port.out import CatalogGateway
+from order.core.order.port.out import CatalogGateway, ExternalEventPublisher, OutboxMessage
+from order.core.order.usecase.relay_outbox import OutboxRelay
 
 NOW = datetime(2026, 4, 28, 11, 0, tzinfo=UTC)
 
@@ -34,11 +35,33 @@ def test_settings() -> Settings:
             "TEST_DATABASE_URL", "postgresql+asyncpg://catalog:catalog@localhost:5470/orders_test"
         ),
         auth_mode="local",
+        event_publisher="log",
+        outbox_relay_enabled=False,
     )
 
 
 def stand_catalog_settings(base_url: str) -> CatalogSettings:
     return replace(catalog_settings(base_url), breaker_failures=100)
+
+
+class RecordingPublisher:
+    def __init__(self, fail: Exception | None = None) -> None:
+        self.messages: list[OutboxMessage] = []
+        self.fail = fail
+
+    async def publish(self, message: OutboxMessage) -> None:
+        if self.fail is not None:
+            raise self.fail
+        self.messages.append(message)
+
+
+@dataclass(frozen=True)
+class OutboxRow:
+    id: uuid.UUID
+    aggregate_id: uuid.UUID
+    event_type: str
+    payload: str
+    published: bool
 
 
 class Stand:
@@ -49,6 +72,10 @@ class Stand:
     @property
     def engine(self) -> AsyncEngine:
         return self.app.state.engine
+
+    @property
+    def relay(self) -> OutboxRelay:
+        return self.app.state.relay
 
     async def call(
         self, method: str, path: str, token: str = "", body: str = "", headers: dict[str, str] | None = None
@@ -68,7 +95,7 @@ class Stand:
 
     async def clear_tables(self) -> None:
         async with self.engine.begin() as connection:
-            await connection.execute(text("TRUNCATE idempotency_keys, order_items, orders"))
+            await connection.execute(text("TRUNCATE outbox, idempotency_keys, order_items, orders"))
 
     async def orders_in_db(self) -> int:
         async with self.engine.connect() as connection:
@@ -90,6 +117,40 @@ class Stand:
             ).one()
         return (row[0], row[1], row[2])
 
+    async def outbox_rows(self) -> list[OutboxRow]:
+        async with self.engine.connect() as connection:
+            rows = (
+                await connection.execute(
+                    text(
+                        """
+                        SELECT id, aggregate_id, event_type, CAST(payload AS text), published_at IS NOT NULL
+                        FROM outbox ORDER BY occurred_at, id
+                        """
+                    )
+                )
+            ).all()
+        return [OutboxRow(row[0], row[1], row[2], row[3], row[4]) for row in rows]
+
+    async def given_outbox_row(self, event_type: str, payload: str, occurred_at: datetime = NOW) -> uuid.UUID:
+        row_id = uuid.uuid4()
+        async with self.engine.begin() as connection:
+            await connection.execute(
+                text(
+                    """
+                    INSERT INTO outbox (id, aggregate_id, aggregate_type, event_type, event_version, payload, occurred_at)
+                    VALUES (:id, :aggregate_id, 'Order', :event_type, 1, CAST(:payload AS jsonb), :occurred_at)
+                    """
+                ),
+                {
+                    "id": row_id,
+                    "aggregate_id": uuid.uuid4(),
+                    "event_type": event_type,
+                    "payload": payload,
+                    "occurred_at": occurred_at,
+                },
+            )
+        return row_id
+
 
 StandFactory = Callable[[CatalogGateway], Awaitable[Stand]]
 
@@ -98,8 +159,11 @@ StandFactory = Callable[[CatalogGateway], Awaitable[Stand]]
 async def start_stand():
     async with AsyncExitStack() as stack:
 
-        async def start(gateway: CatalogGateway) -> Stand:
-            app = create_app(test_settings(), Deps(clock=FixedClock(), catalog=gateway))
+        async def start(gateway: CatalogGateway, publisher: ExternalEventPublisher | None = None) -> Stand:
+            app = create_app(
+                test_settings(),
+                Deps(clock=FixedClock(), catalog=gateway, publisher=publisher or RecordingPublisher()),
+            )
             await stack.enter_async_context(LifespanManager(app))
             client = await stack.enter_async_context(
                 httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
