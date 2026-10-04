@@ -48,8 +48,9 @@ class ProductService:
         return product
 
     async def reserve(self, product_id: uuid.UUID, quantity: int) -> Product:
+        # TODO шаг 5: строка под блокировкой внутри транзакции, иначе двое прочитают один остаток
         async with self.uow() as store:
-            product = await store.by_id_for_update(product_id)
+            product = await store.by_id(product_id)
             product.reserve(quantity)
             await store.save(product)
         return product

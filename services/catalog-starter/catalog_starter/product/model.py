@@ -22,7 +22,7 @@ class Product(Base):
     _title: Mapped[str] = mapped_column("title", String(255), nullable=False)
     _price: Mapped[Decimal] = mapped_column("price", Numeric(12, 2), nullable=False)
     _stock: Mapped[int] = mapped_column("stock", Integer, nullable=False)
-    _reserved: Mapped[int] = mapped_column("reserved", Integer, nullable=False, default=0)
+    # TODO шаг 5: колонка reserved; available = stock - reserved; резерв удерживает, списание не опускает stock ниже reserved
     _version: Mapped[int] = mapped_column("version", BigInteger, nullable=False, default=0)
 
     __mapper_args__ = {"version_id_col": _version}
@@ -40,7 +40,6 @@ class Product(Base):
         product._title = title.strip()
         product._price = price
         product._stock = stock
-        product._reserved = 0
         product._version = 0
         return product
 
@@ -62,11 +61,11 @@ class Product(Base):
 
     @property
     def reserved(self) -> int:
-        return self._reserved
+        return 0
 
     @property
     def available(self) -> int:
-        return self._stock - self._reserved
+        return self._stock
 
     @property
     def version(self) -> int:
@@ -85,13 +84,13 @@ class Product(Base):
     def change_stock(self, delta: int) -> None:
         if delta == 0:
             raise invalid("изменение остатка не может быть нулевым")
-        if self._stock + delta < self._reserved:
-            raise OutOfStockError(self._id, -delta, self.available)
+        if self._stock + delta < 0:
+            raise OutOfStockError(self._id, -delta, self._stock)
         self._stock += delta
 
     def reserve(self, quantity: int) -> None:
         if quantity <= 0:
             raise invalid("количество должно быть больше нуля")
-        if quantity > self.available:
-            raise OutOfStockError(self._id, quantity, self.available)
-        self._reserved += quantity
+        if quantity > self._stock:
+            raise OutOfStockError(self._id, quantity, self._stock)
+        self._stock -= quantity
