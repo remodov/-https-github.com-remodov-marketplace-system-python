@@ -1,13 +1,14 @@
+import json
 import uuid
 from collections.abc import Sequence
+from dataclasses import asdict
 from datetime import datetime
 
-from orders_v1 import OrderCreatedPayload
-from sqlalchemy import Text, cast, insert, literal, select, update
+from sqlalchemy import Text, cast, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from ....core.order.aggregate.events import Event, OrderCreated
+from ....core.order.aggregate.events import Event
 from ....core.order.port.out import IdGenerator, OutboxMessage
 from .tables import outbox
 from .unit_of_work import session_in_scope
@@ -25,20 +26,10 @@ class SqlAlchemyOutbox:
         self.sessions = sessions
         self.ids = ids
 
+    # TODO шаг 10: каждое событие строкой в outbox через session_in_scope, той же
+    # транзакцией, что и заказ; payload через jsonb_of(payload_of(event)), published_at пустой.
     async def append(self, events: Sequence[Event]) -> None:
-        async with session_in_scope(self.sessions) as session:
-            for event in events:
-                await session.execute(
-                    insert(outbox).values(
-                        id=self.ids.new_id(),
-                        aggregate_id=event.aggregate_id,
-                        aggregate_type=AGGREGATE_ORDER,
-                        event_type=event.event_type,
-                        event_version=EVENT_VERSION,
-                        payload=jsonb_of(payload_of(event)),
-                        occurred_at=event.occurred_at,
-                    )
-                )
+        return None
 
     async def unpublished(self, limit: int) -> list[OutboxMessage]:
         async with session_in_scope(self.sessions) as session:
@@ -81,16 +72,8 @@ def jsonb_of(payload: bytes):
     return cast(literal(payload.decode(), Text), JSONB)
 
 
+# TODO шаг 10: собрать payload по внешнему контракту из contracts/orders_v1
+# (OrderCreatedPayload(...).encode()), а не отдавать наружу внутренний dataclass;
+# событие, которого нет в контракте, - NotInContract.
 def payload_of(event: Event) -> bytes:
-    match event:
-        case OrderCreated():
-            return OrderCreatedPayload(
-                order_id=event.order_id,
-                customer_id=event.customer_id,
-                seller_id=event.seller_id,
-                occurred_at=event.at,
-                total_amount=f"{event.total.amount:.2f}",
-                currency=event.total.currency,
-                items_count=len(event.items),
-            ).encode()
-    raise NotInContract(f"событие {event.event_type} не описано во внешнем контракте")
+    return json.dumps(asdict(event), default=str).encode()

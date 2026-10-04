@@ -27,17 +27,11 @@ class OutboxRelay:
         self.batch_size = batch_size
         self.stopping = asyncio.Event()
 
+    # TODO шаг 10: в одной единице работы (uow.begin) взять пачку unpublished, опубликовать
+    # каждую через publisher и пометить mark_published временем clock; отказ брокера завернуть
+    # в PublishFailed, тогда транзакция откатится и строки останутся. Вернуть число отправленных.
     async def once(self) -> int:
-        published = 0
-        async with self.uow.begin():
-            for message in await self.outbox.unpublished(self.batch_size):
-                try:
-                    await self.publisher.publish(message)
-                except Exception as error:
-                    raise PublishFailed(f"публикация {message.event_type} {message.id}: {error}") from error
-                await self.outbox.mark_published(message.id, self.clock.now())
-                published += 1
-        return published
+        return 0
 
     async def run(self, every: float, batch_timeout: float) -> None:
         while not self.stopping.is_set():
