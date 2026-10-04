@@ -217,13 +217,15 @@ Redis на минутное окно: `INCR` плюс `EXPIRE` на первом
 
 **Материал:** [/docker/python/dockerizing/](https://vikulin-va.ru/docker/python/dockerizing/) · [/docker/python/runtime/](https://vikulin-va.ru/docker/python/runtime/) · [/kubernetes/](https://vikulin-va.ru/kubernetes/) · [/observability/python/health-checks/](https://vikulin-va.ru/observability/python/health-checks/) · [/observability/python/metrics/](https://vikulin-va.ru/observability/python/metrics/) · [/cicd/](https://vikulin-va.ru/cicd/)
 
-**Даётся:** черновой `Dockerfile` стартового каталога, манифест `deploy/k8s/catalog-starter.yaml`
-без проб и лимитов, эталонный `deploy/k8s/bff.yaml`, пайплайн `.github/workflows/ci.yml`,
-проверка выката `tools/check-deploy.py`, модуль `observability` с гистограммой времени ответа на
-`prometheus_client` и трассировкой на OpenTelemetry.
+**Даётся:** черновой `Dockerfile` стартового каталога (одна стадия, от root), манифест
+`deploy/k8s/catalog-starter.yaml` без проб и лимитов, эталонный `deploy/k8s/bff.yaml`, пайплайн
+`.github/workflows/ci.yml` с PostgreSQL и Redis, проверка выката `tools/check-deploy.py`, модуль
+`observability.py` с гистограммой времени ответа на `prometheus_client`, middleware замера, трассировкой
+на OpenTelemetry и экспортом в OTLP.
 
-**Ученик:** собирает образ в два этапа без инструментов сборки и без root; в манифесте заводит пробы,
-запросы и лимиты, `preStop` и версию образа вместо `latest`; монтирует пробы и `/metrics` с меткой
-сервиса и включает сэмплирование трасс по доле из настроек.
+**Ученик:** собирает образ в две стадии без инструментов сборки и без root; в манифесте заводит пробы
+готовности и живости, запросы и лимиты, `preStop` и версию образа вместо `latest`; монтирует пробы и
+`/metrics` с меткой сервиса и включает сэмплирование трасс по доле из настроек.
 
-**Проверка:** `tools/check-deploy.py` без замечаний, четыре проверки наблюдаемости зелёные.
+**Проверка:** `tools/check-deploy.py` без замечаний (сейчас десять), четыре проверки `test_observability.py`
+зелёные: обе пробы, метрики Prometheus с меткой `service` и маршрутом, сэмплер берёт все трассы при доле 1.0.

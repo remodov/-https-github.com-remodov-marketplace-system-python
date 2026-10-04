@@ -24,7 +24,35 @@ curl -s -X POST localhost:8182/products/<id>/reserve -H 'Content-Type: applicati
 ```
 
 Настройки - переменные окружения: `HTTP_PORT` (`8182`), `DATABASE_URL`
-(база из compose на 5470), `CACHE` (`redis` или `memory`), `REDIS_URL`.
+(база из compose на 5470), `CACHE` (`redis` или `memory`), `REDIS_URL`, `SERVICE_NAME`
+(`catalog-starter`, метка `service` в метриках и `service.name` в трассах),
+`OTEL_EXPORTER_OTLP_ENDPOINT` (адрес коллектора; пустой - трассы не отправляются),
+`TRACE_SAMPLE_RATIO` (доля трасс от 0 до 1, по умолчанию `1.0`).
+
+Пробы и метрики: `GET /health/live` отвечает 204, пока процесс жив; `GET /health/ready` отвечает 204,
+если база отвечает на `SELECT 1`, иначе 503 с кодом `NOT_READY`; `GET /metrics` отдаёт гистограмму
+`http_server_request_duration_seconds` в формате Prometheus с метками `service`, `method`, `route`
+(шаблон маршрута, не сырой URL) и `status`.
+
+## Собрать образ
+
+Контекст сборки - корень репозитория, образ собирается в две стадии: первая ставит зависимости из
+`pyproject.toml` в `/opt/venv` (`pip install --only-deps`, без кэша), вторая берёт из неё только
+окружение и код сервиса и бежит от пользователя `app` (uid 65532), без pip-кэша и компиляторов.
+
+```bash
+cd ../..
+docker build -f services/catalog-starter/Dockerfile -t catalog-starter-python:0.1.0 .
+docker run --rm -p 8182:8182 \
+  -e DATABASE_URL=postgresql+asyncpg://catalog:catalog@host.docker.internal:5470/catalog_starter \
+  -e REDIS_URL=redis://host.docker.internal:6383 \
+  catalog-starter-python:0.1.0
+curl -i localhost:8182/health/ready
+```
+
+База стенда видна из контейнера как `host.docker.internal`; на Linux без Docker Desktop подойдёт
+`--network host` и `localhost:5470`. Манифест для Kubernetes с пробами, лимитами и `preStop` -
+`deploy/k8s/catalog-starter.yaml`, проверка выката - `python3 tools/check-deploy.py` из корня.
 
 ## Прогнать тесты
 
@@ -45,7 +73,9 @@ pytest
 | `catalog_starter/product/service.py` | сценарии: найти, создать, зарезервировать |
 | `catalog_starter/product/router.py` | REST: `GET /products`, `GET /products/{id}`, `POST /products`, `POST /products/{id}/reserve` |
 | `catalog_starter/problem.py` | тело ошибки в формате Problem Details, коды 400, 404 и 409 |
+| `catalog_starter/observability.py` | пробы `/health/live` и `/health/ready`, `/metrics` для Prometheus, middleware времени ответа, сэмплер и экспорт трасс в OTLP |
 | `migrations/` | миграции Alembic, применяются при старте |
+| `Dockerfile` | образ в две стадии: зависимости в `/opt/venv`, рантайм без компиляторов и root |
 
 Правило, вокруг которого всё крутится, живёт в модели, а не в сервисе:
 

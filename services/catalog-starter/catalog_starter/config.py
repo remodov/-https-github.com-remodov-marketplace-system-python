@@ -1,5 +1,6 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,3 +12,6 @@ class Settings(BaseSettings):
     cache: Literal["memory", "redis"] = "redis"
     redis_url: str = "redis://localhost:6383"
     cache_ttl_seconds: int = 600
+    service_name: str = "catalog-starter"
+    otel_exporter_otlp_endpoint: str = ""
+    trace_sample_ratio: float = Field(default=1.0, ge=0.0, le=1.0)

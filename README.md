@@ -114,11 +114,42 @@ docker compose -f infra/compose.yaml ps
 
 Порты сдвинуты относительно Java-, Go- и Node-версий, чтобы стенды могли жить на одной машине.
 
+## Образ, манифесты и пайплайн
+
+Пятнадцатый шаг доводит стартовый каталог до выката. Образ собирается из корня репозитория в две
+стадии: первая ставит зависимости из `pyproject.toml` в виртуальное окружение
+(`pip install --only-deps`), вторая берёт из неё только `/opt/venv` и код сервиса, без кэша pip и
+компиляторов, и бежит от пользователя `app` (uid 65532). Проверить на стенде:
+
+```bash
+docker build -f services/catalog-starter/Dockerfile -t catalog-starter-python:0.1.0 .
+docker run --rm -p 8182:8182 \
+  -e DATABASE_URL=postgresql+asyncpg://catalog:catalog@host.docker.internal:5470/catalog_starter \
+  -e REDIS_URL=redis://host.docker.internal:6383 \
+  catalog-starter-python:0.1.0
+curl -i localhost:8182/health/ready
+curl -s localhost:8182/metrics | grep http_server_request_duration_seconds_count
+```
+
+Манифесты Kubernetes лежат в `deploy/k8s/`: `catalog-starter.yaml` и эталонный `bff.yaml` с пробами
+готовности и живости, запросами и лимитами ресурсов, `preStop`, запретом root и версией образа вместо
+`latest`. Пайплайн `.github/workflows/ci.yml` на каждый pull request поднимает PostgreSQL и Redis,
+гоняет `ruff` и тесты `catalog-starter`, `catalog`, `payment` и `bff` на Python 3.13 и 3.14, тесты
+веб-клиента и проверку выката. Заказы и уведомления в нём не гоняются: им нужна Kafka, они живут на стенде.
+
+```bash
+python3 tools/check-deploy.py
+```
+
+Скрипт смотрит на манифесты, образ и сам пайплайн и ругается на то, из-за чего выкат ломается в проде,
+а не на стенде: под без проб, без лимитов и без `preStop`, образ с `latest`, контейнер от root, сборочные
+инструменты в рантайм-стадии, пайплайн без тестов.
+
 ## Как устроен шаг
 
 Ветка `step-NN-<тема>` - задание: каркас на месте, реализация вынута, тест красный,
-условие в `TASK.md` внутри сервиса. Ветка `step-NN-<тема>-solution` - эталон.
-`main` - накопленный эталон всех шагов.
+условие в `TASK.md` внутри сервиса (в пятнадцатом шаге, который трогает весь репозиторий, в корне).
+Ветка `step-NN-<тема>-solution` - эталон. `main` - накопленный эталон всех шагов.
 
 ```bash
 git switch step-02-read-endpoint

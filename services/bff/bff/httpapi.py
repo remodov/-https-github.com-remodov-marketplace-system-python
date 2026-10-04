@@ -29,6 +29,10 @@ def health_router() -> APIRouter:
     async def live() -> Response:
         return Response(status_code=204)
 
+    @router.get("/health/ready", status_code=204)
+    async def ready() -> Response:
+        return Response(status_code=204)
+
     return router
 
 

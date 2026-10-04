@@ -2,10 +2,12 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from sqlalchemy import text
 
 from .cache import Cache, MemoryCache, RedisCache
 from .config import Settings
 from .db import make_engine, make_session_factory, run_migrations
+from .observability import RequestDurationMiddleware, mount, tracing
 from .problem import install_handlers
 from .product.repository import UnitOfWork
 from .product.router import router as products
@@ -38,11 +40,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if isinstance(cache, RedisCache):
             await cache.close()
         await engine.dispose()
+        if app.state.tracer_provider is not None:
+            app.state.tracer_provider.shutdown()
 
     app = FastAPI(title="Каталог: учебная версия", lifespan=lifespan)
     app.state.settings = settings
+
+    async def database_answers() -> None:
+        async with app.state.engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+
+    app.add_middleware(RequestDurationMiddleware, service=settings.service_name)
     install_handlers(app)
+    mount(app, database_answers)
     app.include_router(products)
+    app.state.tracer_provider = tracing(app, settings)
     return app
 
 
