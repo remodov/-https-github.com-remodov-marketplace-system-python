@@ -56,3 +56,13 @@ async def test_missing_delta_is_rejected_with_field_name(stand):
     res = await stand.client.patch(f"/products/{p.id}/stock", json={})
     assert res.status_code == 400, res.text
     assert "delta" in res.json()["errors"]
+
+
+async def test_write_off_cannot_touch_reserved_goods(stand):
+    p = await mouse(stand)
+    res = await stand.client.post(f"/products/{p.id}/reserve", json={"quantity": 4})
+    assert res.status_code == 200, res.text
+    res = await stand.client.patch(f"/products/{p.id}/stock", json={"delta": -3})
+    assert res.status_code == 409, res.text
+    card = (await stand.client.get(f"/products/{p.id}")).json()
+    assert (card["stock"], card["reserved"], card["available"]) == (5, 4, 1)

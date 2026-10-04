@@ -21,11 +21,12 @@ async def test_search_finds_by_part_of_title(stand):
     assert [c["title"] for c in res.json()] == [title]
 
 
-async def test_reserve_writes_off_stock(stand):
+async def test_reserve_holds_stock_instead_of_writing_it_off(stand):
     p = await stand.must_create(unique("USB-хаб"), "890.00", 5)
     res = await stand.client.post(f"/products/{p.id}/reserve", json={"quantity": 2})
     assert res.status_code == 200, res.text
-    assert res.json()["stock"] == 3
+    card = res.json()
+    assert (card["stock"], card["reserved"], card["available"]) == (5, 2, 3), "резерв удерживает, а не списывает"
 
 
 async def test_reserve_more_than_stock_is_rejected(stand):

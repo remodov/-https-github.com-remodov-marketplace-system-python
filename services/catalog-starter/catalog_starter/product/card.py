@@ -11,6 +11,8 @@ class Card(BaseModel):
     title: str
     price: Decimal
     stock: int
+    reserved: int
+    available: int
 
     @field_serializer("price")
     def price_as_number(self, value: Decimal) -> float:
@@ -18,4 +20,11 @@ class Card(BaseModel):
 
 
 def card_of(product: Product) -> Card:
-    return Card(id=product.id, title=product.title, price=product.price, stock=product.stock)
+    return Card(
+        id=product.id,
+        title=product.title,
+        price=product.price,
+        stock=product.stock,
+        reserved=product.reserved,
+        available=product.available,
+    )
