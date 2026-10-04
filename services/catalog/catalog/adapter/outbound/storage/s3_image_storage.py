@@ -32,9 +32,7 @@ class S3ImageStorage:
         self.clock = clock
 
     def presign_upload(self, key: str, content_type: str) -> PresignedUpload:
-        url = self.client.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": self.bucket, "Key": key, "ContentType": content_type},
-            ExpiresIn=int(self.upload_ttl.total_seconds()),
-        )
-        return PresignedUpload(key=key, url=url, expires_at=self.clock.now() + self.upload_ttl)
+        # TODO шаг 12: подписанная ссылка на PUT объекта.
+        # Тип содержимого должен войти в подпись, срок жизни берётся из настроек,
+        # expires_at считается от часов сервиса. Клиент уже знает регион и в сеть не ходит.
+        raise NotImplementedError("шаг 12: ссылка на загрузку не реализована")
