@@ -27,15 +27,18 @@ class Handlers:
     queries: QueryHandler
 
 
+# TODO шаг 8: подобрать числа - таймауты на соединение и чтение, попытки, пауза,
+# порог размыкателя. Худшее время ответа = попытки x (таймаут + пауза); оно должно
+# быть меньше, чем терпение браузера покупателя.
 def catalog_settings(base_url: str) -> CatalogSettings:
     return CatalogSettings(
         base_url=base_url,
-        connect_timeout=0.5,
-        request_timeout=1.0,
-        attempts=2,
-        backoff=0.05,
-        breaker_failures=5,
-        breaker_open_for=60.0,
+        connect_timeout=0,
+        request_timeout=0,
+        attempts=1,
+        backoff=0,
+        breaker_failures=0,
+        breaker_open_for=0,
     )
 
 
