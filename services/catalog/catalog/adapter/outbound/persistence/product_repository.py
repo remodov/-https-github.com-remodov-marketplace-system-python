@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import Row, Select, and_, func, insert, select, update
+from sqlalchemy import ColumnElement, Row, Select, and_, func, insert, select, update
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ....core.errors import AppError, not_found
@@ -63,11 +63,17 @@ class SqlAlchemyProductRepository:
             raise product_not_found(product.id)
 
     async def list_by_seller(self, seller_id: uuid.UUID, list_filter: ListFilter) -> ProductPage:
-        page = max(list_filter.page, 1)
-        size = list_filter.size if 1 <= list_filter.size <= 100 else 20
         condition = products.c.seller_id == seller_id
         if list_filter.status is not None:
             condition = and_(condition, products.c.status == list_filter.status.value)
+        return await self._list(condition, list_filter)
+
+    async def list_published(self, list_filter: ListFilter) -> ProductPage:
+        return await self._list(products.c.status == Status.PUBLISHED.value, list_filter)
+
+    async def _list(self, condition: ColumnElement[bool], list_filter: ListFilter) -> ProductPage:
+        page = max(list_filter.page, 1)
+        size = list_filter.size if 1 <= list_filter.size <= 100 else 20
         async with session_in_scope(self.sessions) as session:
             total = await session.scalar(select(func.count()).select_from(products).where(condition))
             rows = await session.execute(

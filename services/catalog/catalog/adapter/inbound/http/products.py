@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, Response
 
 from ....core.product.aggregate.product import Status
 from ....core.product.port.out import ListFilter, SortField
-from ....core.product.query.queries import GetProduct, ListMyProducts, QueryHandler
+from ....core.product.query.queries import GetProduct, ListMyProducts, ListPublished, QueryHandler
 from ....core.product.usecase.change_product_price import ChangeProductPrice, ChangeProductPriceHandler
 from ....core.product.usecase.change_status import ChangeStatusHandler, HideProduct, PublishProduct
 from ....core.product.usecase.create_product import CreateProduct, CreateProductHandler
@@ -60,6 +60,16 @@ def product_router(
         )
         response.headers["Location"] = f"/api/v1/products/{product.id}"
         return response_of(product)
+
+    @router.get("")
+    async def list_products(
+        page: int = Query(1),
+        size: int = Query(20),
+        sort: str = Query(SortField.CREATED_AT_DESC.value),
+    ) -> ProductPageResponse:
+        list_filter = ListFilter(page=page, size=size, sort=sort_field(sort))
+        found = await queries.list_published(ListPublished(list_filter=list_filter))
+        return page_of(found)
 
     @router.get("/my")
     async def list_my_products(

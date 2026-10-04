@@ -19,9 +19,9 @@
 | `services/notification` | уведомления: потребитель событий заказа с защитой от повторной доставки | FastAPI, SQLAlchemy 2 Core (async), Alembic, aiokafka |
 | `services/bff` | граница системы: экран заказа одним запросом из трёх сервисов, лимит частоты на клиента в Redis | FastAPI, httpx, redis |
 | `contracts` | внешние контракты событий заказа и платежа: AsyncAPI, схемы и pydantic-пакеты для продюсера и потребителей | AsyncAPI 3, pydantic |
+| `web` | веб-клиент: витрина, корзина, оформление с ключом идемпотентности, экран заказа через BFF и воронка покупки | React 19, TypeScript, Vite, vitest |
 
-Дальше по плану появляется `web` - по образцу Java- и Go-версий
-([план](docs/practicum/PLAN.md)).
+Шаги практикума и что в каждом делает ученик - в [плане](docs/practicum/PLAN.md).
 
 ## С чего начинать
 
@@ -29,7 +29,7 @@
 хранилище, одна таблица, запросы через SQLAlchemy там, где они читаются, и явный SQL в
 миграциях. Клонировал, поднял базу, запустил, увидел товар.
 
-Нужны Python 3.12 или новее и Docker.
+Нужны Python 3.12 или новее и Docker; для веб-клиента из четырнадцатого шага ещё Node.js 20 или новее.
 
 ```bash
 git clone git@github.com:remodov/marketplace-system-python.git
@@ -86,6 +86,16 @@ pip install -e "services/bff[dev]"
 cd services/bff
 python -m pytest -q
 uvicorn bff.main:app --port 8190
+```
+
+Веб-клиент из четырнадцатого шага один на все языки практикума, от Go- и Java-версий отличаются только
+порты в `web/vite.config.ts`: в разработке Vite сам раздаёт запросы каталогу (8180), заказам (8181) и BFF (8190):
+
+```bash
+cd web
+npm install
+npm test
+npm run dev
 ```
 
 ## Поднять стенд

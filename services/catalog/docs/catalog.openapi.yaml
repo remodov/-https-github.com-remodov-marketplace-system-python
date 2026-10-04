@@ -25,6 +25,47 @@ security:
 
 paths:
   /api/v1/products:
+    get:
+      tags: [Products]
+      operationId: listProducts
+      summary: Витрина: опубликованные продукты всех продавцов
+      description: |
+        Публичное чтение без токена: только `PUBLISHED` (BR-P06), черновики и скрытые карточки в выдачу
+        не попадают. Этой ручкой пользуется веб-клиент `web/` для каталога.
+      security: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ['createdAt,desc', 'createdAt,asc', 'price,asc', 'price,desc', 'title,asc']
+            default: 'createdAt,desc'
+          description: Поле сортировки и направление через запятую; неизвестное значение равно умолчанию
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPageDto'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
     post:
       tags: [Products]
       operationId: createProduct

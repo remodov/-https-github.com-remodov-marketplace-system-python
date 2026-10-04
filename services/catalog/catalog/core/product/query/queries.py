@@ -19,6 +19,11 @@ class ListMyProducts:
     list_filter: ListFilter = field(default_factory=ListFilter)
 
 
+@dataclass(frozen=True)
+class ListPublished:
+    list_filter: ListFilter = field(default_factory=ListFilter)
+
+
 class QueryHandler:
     def __init__(self, products: ProductRepository) -> None:
         self.products = products
@@ -35,3 +40,6 @@ class QueryHandler:
 
     async def list_my_products(self, query: ListMyProducts) -> ProductPage:
         return await self.products.list_by_seller(query.seller, query.list_filter)
+
+    async def list_published(self, query: ListPublished) -> ProductPage:
+        return await self.products.list_published(query.list_filter)
