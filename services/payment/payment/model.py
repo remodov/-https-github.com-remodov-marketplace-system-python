@@ -11,13 +11,10 @@ class Status(StrEnum):
     REFUNDED = "REFUNDED"
     FAILED = "FAILED"
 
+    # TODO шаг 11: перечислить разрешённые переходы; всё, чего здесь нет, запрещено,
+    # конечные статусы никуда не ведут, переход в себя же не переход.
     def can_move_to(self, next_status: "Status") -> bool:
-        match self:
-            case Status.AUTHORIZED:
-                return next_status in (Status.CAPTURED, Status.REFUNDED, Status.FAILED)
-            case Status.CAPTURED:
-                return next_status is Status.REFUNDED
-        return False
+        return True
 
 
 class InvalidTransition(Exception):
