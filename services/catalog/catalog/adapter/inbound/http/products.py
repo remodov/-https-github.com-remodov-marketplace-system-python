@@ -8,15 +8,19 @@ from ....core.product.query.queries import GetProduct, ListMyProducts, QueryHand
 from ....core.product.usecase.change_product_price import ChangeProductPrice, ChangeProductPriceHandler
 from ....core.product.usecase.change_status import ChangeStatusHandler, HideProduct, PublishProduct
 from ....core.product.usecase.create_product import CreateProduct, CreateProductHandler
+from ....core.product.usecase.request_image_upload import RequestImageUpload, RequestImageUploadHandler
 from ....core.security.principal import Principal, Role
 from .auth import Authenticator, optional_principal, require_roles
 from .schemas import (
     ChangePriceRequest,
     CreateProductRequest,
+    ImageUploadRequest,
+    ImageUploadUrlResponse,
     ProductPageResponse,
     ProductResponse,
     page_of,
     response_of,
+    upload_url_of,
 )
 
 
@@ -33,6 +37,7 @@ def product_router(
     price: ChangeProductPriceHandler,
     transitions: ChangeStatusHandler,
     queries: QueryHandler,
+    uploads: RequestImageUploadHandler,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/products", tags=["products"])
     principal_of = optional_principal(auth)
@@ -102,5 +107,16 @@ def product_router(
             ChangeProductPrice(product_id=product_id, requester=principal, new_price=body.price)
         )
         return response_of(product)
+
+    @router.post("/{product_id}/image-upload-url")
+    async def request_image_upload(
+        product_id: uuid.UUID,
+        body: ImageUploadRequest,
+        principal: Principal = Depends(seller_or_admin),
+    ) -> ImageUploadUrlResponse:
+        upload = await uploads.handle(
+            RequestImageUpload(product_id=product_id, requester=principal, content_type=body.content_type)
+        )
+        return upload_url_of(upload)
 
     return router

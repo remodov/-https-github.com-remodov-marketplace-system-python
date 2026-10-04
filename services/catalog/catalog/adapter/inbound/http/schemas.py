@@ -1,12 +1,12 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_serializer
 
 from ....core.product.aggregate.product import Product, Status
-from ....core.product.port.out import ProductPage
+from ....core.product.port.out import PresignedUpload, ProductPage
 
 
 class CreateProductRequest(BaseModel):
@@ -18,6 +18,13 @@ class CreateProductRequest(BaseModel):
 
 class ChangePriceRequest(BaseModel):
     price: Decimal = Field(gt=0)
+
+
+ImageContentType = Literal["image/jpeg", "image/png", "image/webp"]
+
+
+class ImageUploadRequest(BaseModel):
+    content_type: ImageContentType = Field(alias="contentType")
 
 
 class ProductResponse(BaseModel):
@@ -34,6 +41,12 @@ class ProductResponse(BaseModel):
     @field_serializer("price")
     def price_as_number(self, value: Decimal) -> float:
         return float(value)
+
+
+class ImageUploadUrlResponse(BaseModel):
+    key: str
+    url: str
+    expires_at: datetime = Field(serialization_alias="expiresAt")
 
 
 class ProductPageResponse(BaseModel):
@@ -64,3 +77,7 @@ def page_of(page: ProductPage) -> ProductPageResponse:
         size=page.size,
         total=page.total,
     )
+
+
+def upload_url_of(upload: PresignedUpload) -> ImageUploadUrlResponse:
+    return ImageUploadUrlResponse(key=upload.key, url=upload.url, expires_at=upload.expires_at)

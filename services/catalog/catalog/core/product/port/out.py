@@ -74,3 +74,15 @@ class IdGenerator(Protocol):
 @runtime_checkable
 class UnitOfWork(Protocol):
     def begin(self) -> AbstractAsyncContextManager[None]: ...
+
+
+@dataclass(frozen=True)
+class PresignedUpload:
+    key: str
+    url: str
+    expires_at: datetime
+
+
+@runtime_checkable
+class ImageStorage(Protocol):
+    def presign_upload(self, key: str, content_type: str) -> PresignedUpload: ...

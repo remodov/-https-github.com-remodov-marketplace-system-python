@@ -5,8 +5,16 @@ import catalog
 from catalog.adapter.outbound.persistence.audit_repository import SqlAlchemyAuditLogger
 from catalog.adapter.outbound.persistence.product_repository import SqlAlchemyProductRepository
 from catalog.adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
+from catalog.adapter.outbound.storage.s3_image_storage import S3ImageStorage, StorageSettings
 from catalog.adapter.outbound.system.system import SystemClock, UuidGenerator
-from catalog.core.product.port.out import AuditLogger, Clock, IdGenerator, ProductRepository, UnitOfWork
+from catalog.core.product.port.out import (
+    AuditLogger,
+    Clock,
+    IdGenerator,
+    ImageStorage,
+    ProductRepository,
+    UnitOfWork,
+)
 
 PACKAGE = "catalog"
 PACKAGE_ROOT = Path(catalog.__file__).resolve().parent
@@ -22,6 +30,17 @@ FORBIDDEN_IN_CORE = (
     "jwt",
     "uvicorn",
     "httpx",
+    "boto3",
+    "botocore",
+)
+
+STORAGE = StorageSettings(
+    endpoint="http://localhost:9004",
+    region="us-east-1",
+    access_key="marketplace",
+    secret_key="marketplace",
+    bucket="marketplace-images",
+    upload_ttl_seconds=600,
 )
 
 
@@ -95,3 +114,4 @@ def test_adapters_satisfy_ports():
     assert isinstance(SqlAlchemyUnitOfWork(sessions), UnitOfWork)
     assert isinstance(SystemClock(), Clock)
     assert isinstance(UuidGenerator(), IdGenerator)
+    assert isinstance(S3ImageStorage(STORAGE, SystemClock()), ImageStorage)

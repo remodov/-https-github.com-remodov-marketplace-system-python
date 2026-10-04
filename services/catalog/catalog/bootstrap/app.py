@@ -22,7 +22,7 @@ def create_app(settings: Settings | None = None, deps: Deps | None = None) -> Fa
     settings = settings or Settings()
     deps = deps or Deps()
     engine = make_engine(settings.database_url)
-    handlers = wire_handlers(make_session_factory(engine), deps)
+    handlers = wire_handlers(make_session_factory(engine), settings, deps)
     auth = authenticator_of(settings, deps)
 
     @asynccontextmanager
@@ -38,6 +38,8 @@ def create_app(settings: Settings | None = None, deps: Deps | None = None) -> Fa
     install_handlers(app)
     app.include_router(health_router(DatabasePinger(engine)))
     app.include_router(
-        product_router(auth, handlers.create, handlers.price, handlers.transitions, handlers.queries)
+        product_router(
+            auth, handlers.create, handlers.price, handlers.transitions, handlers.queries, handlers.uploads
+        )
     )
     return app

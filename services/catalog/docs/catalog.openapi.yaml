@@ -222,6 +222,39 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/InternalServerError' }
 
+  /api/v1/products/{productId}/image-upload-url:
+    parameters:
+      - $ref: '#/components/parameters/ProductId'
+    post:
+      tags: [Products]
+      operationId: requestImageUploadUrl
+      summary: Временная ссылка на загрузку фото товара
+      description: |
+        Файл грузится мимо сервиса: сервис подписывает ссылку на `PUT` объекта в хранилище на срок
+        `IMAGE_UPLOAD_URL_TTL_SECONDS`, браузер кладёт файл сам. Тип содержимого входит в подпись: ссылка
+        на `image/jpeg` не примет архив. Ключ объекта `products/<productId>/<uuid>` говорит, чей это файл.
+        ABAC: только владелец (BR-P04); чужой - 404 `OWN_PRODUCT_REQUIRED`, а не 403.
+      security:
+        - bearerAuth: [seller]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImageUploadRequest'
+      responses:
+        '200':
+          description: Ссылка подписана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImageUploadUrlDto'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '500': { $ref: '#/components/responses/InternalServerError' }
+
   /health/live:
     get:
       tags: [Health]
@@ -354,6 +387,32 @@ components:
           type: integer
           format: int64
           example: 137
+
+    ImageUploadRequest:
+      type: object
+      required: [contentType]
+      properties:
+        contentType:
+          type: string
+          enum: [image/jpeg, image/png, image/webp]
+          example: image/jpeg
+
+    ImageUploadUrlDto:
+      type: object
+      required: [key, url, expiresAt]
+      properties:
+        key:
+          type: string
+          description: Ключ объекта в корзине, products/<productId>/<uuid>
+          example: products/3fa85f64-5717-4562-b3fc-2c963f66afa6/9b2e6c1a-0f4d-4c7e-9a3b-2d1e5f6a7b8c
+        url:
+          type: string
+          format: uri
+          description: Подписанная ссылка на PUT объекта с тем же Content-Type
+          example: http://localhost:9004/marketplace-images/products/3fa85f64-5717-4562-b3fc-2c963f66afa6/9b2e6c1a-0f4d-4c7e-9a3b-2d1e5f6a7b8c?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=600&X-Amz-SignedHeaders=content-type%3Bhost&X-Amz-Signature=...
+        expiresAt:
+          type: string
+          format: date-time
 
     ErrorCode:
       type: string
