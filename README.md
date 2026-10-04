@@ -13,10 +13,10 @@
 | сервис | отвечает за | стек |
 |---|---|---|
 | `services/catalog-starter` | карточки товаров, остатки, резерв, поиск | FastAPI, SQLAlchemy 2 (async), Alembic, Redis |
+| `services/catalog` | те же карточки по-взрослому: слои, спецификация, роли, владение, журнал администратора | FastAPI, SQLAlchemy 2 Core (async), Alembic, PyJWT, архитектурные тесты |
 
-Дальше по плану появляются `services/catalog` (тот же каталог по-взрослому), `services/order`,
-`services/payment`, `services/notification`, `services/bff`, `web` и `contracts` - по образцу
-Java- и Go-версий ([план](docs/practicum/PLAN.md)).
+Дальше по плану появляются `services/order`, `services/payment`, `services/notification`,
+`services/bff`, `web` и `contracts` - по образцу Java- и Go-версий ([план](docs/practicum/PLAN.md)).
 
 ## С чего начинать
 
@@ -35,6 +35,15 @@ pip install -e "services/catalog-starter[dev]"
 cd services/catalog-starter
 pytest
 uvicorn catalog_starter.main:app --port 8182
+```
+
+Взрослая версия каталога из второй части ставится рядом в то же окружение:
+
+```bash
+pip install -e "services/catalog[dev]"
+cd services/catalog
+python -m pytest -q
+uvicorn catalog.main:app --port 8180
 ```
 
 ## Поднять стенд
