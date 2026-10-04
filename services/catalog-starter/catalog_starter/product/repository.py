@@ -1,4 +1,5 @@
 import uuid
+from decimal import Decimal
 from typing import Protocol
 
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from .model import Product
 class ProductStore(Protocol):
     async def all(self) -> list[Product]: ...
     async def by_title(self, part: str) -> list[Product]: ...
+    async def cheaper(self, max_price: Decimal) -> list[Product]: ...
     async def by_id(self, product_id: uuid.UUID) -> Product: ...
     async def by_id_for_update(self, product_id: uuid.UUID) -> Product: ...
     async def add(self, product: Product) -> None: ...
@@ -29,6 +31,12 @@ class SqlAlchemyProductStore:
     async def by_title(self, part: str) -> list[Product]:
         rows = await self.session.scalars(
             select(Product).where(Product._title.ilike(f"%{part}%")).order_by(Product._title)
+        )
+        return list(rows)
+
+    async def cheaper(self, max_price: Decimal) -> list[Product]:
+        rows = await self.session.scalars(
+            select(Product).where(Product._price <= max_price).order_by(Product._price)
         )
         return list(rows)
 
