@@ -4,13 +4,15 @@ from pathlib import Path
 import order
 from order.adapter.outbound.catalog.client import CatalogClient
 from order.adapter.outbound.kafka.publisher import KafkaPublisher
+from order.adapter.outbound.payment.client import PaymentClient
 from order.adapter.outbound.persistence.idempotency_repository import SqlAlchemyIdempotencyKeys
 from order.adapter.outbound.persistence.order_repository import SqlAlchemyOrderRepository
 from order.adapter.outbound.persistence.outbox_repository import SqlAlchemyOutbox
+from order.adapter.outbound.persistence.processed_events_repository import SqlAlchemyProcessedEvents
 from order.adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from order.adapter.outbound.system.log_publisher import LogPublisher
 from order.adapter.outbound.system.system import SystemClock, UuidGenerator
-from order.bootstrap.wire import catalog_settings
+from order.bootstrap.wire import catalog_settings, payment_settings
 from order.core.order.port.out import (
     CatalogGateway,
     Clock,
@@ -19,6 +21,8 @@ from order.core.order.port.out import (
     IdempotencyKeys,
     IdGenerator,
     OrderRepository,
+    PaymentGateway,
+    ProcessedEvents,
     UnitOfWork,
 )
 
@@ -38,6 +42,7 @@ FORBIDDEN_IN_CORE = (
     "httpx",
     "aiokafka",
     "orders_v1",
+    "payments_v1",
 )
 
 
@@ -110,6 +115,7 @@ async def test_adapters_satisfy_ports():
     assert isinstance(SqlAlchemyIdempotencyKeys(sessions), IdempotencyKeys)
     assert isinstance(SqlAlchemyUnitOfWork(sessions), UnitOfWork)
     assert isinstance(SqlAlchemyOutbox(sessions, UuidGenerator()), EventOutbox)
+    assert isinstance(SqlAlchemyProcessedEvents(sessions), ProcessedEvents)
     assert isinstance(LogPublisher(), ExternalEventPublisher)
     assert isinstance(KafkaPublisher("localhost:9097", "marketplace.orders.v1"), ExternalEventPublisher)
     assert isinstance(SystemClock(), Clock)
@@ -117,3 +123,6 @@ async def test_adapters_satisfy_ports():
     catalog = CatalogClient(catalog_settings("http://localhost:8180"))
     assert isinstance(catalog, CatalogGateway)
     await catalog.aclose()
+    payment = PaymentClient(payment_settings("http://localhost:8186"))
+    assert isinstance(payment, PaymentGateway)
+    await payment.aclose()

@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Self
 
@@ -18,7 +18,15 @@ from order.adapter.outbound.catalog.client import CatalogSettings
 from order.bootstrap.app import create_app
 from order.bootstrap.config import Settings
 from order.bootstrap.wire import Deps, catalog_settings
-from order.core.order.port.out import CatalogGateway, ExternalEventPublisher, OutboxMessage
+from order.core.order.port.out import (
+    CatalogGateway,
+    Clock,
+    ExternalEventPublisher,
+    OutboxMessage,
+    PaymentGateway,
+)
+from order.core.order.usecase.expire_unpaid import ExpireUnpaid
+from order.core.order.usecase.lifecycle import LifecycleHandler
 from order.core.order.usecase.relay_outbox import OutboxRelay
 
 NOW = datetime(2026, 4, 28, 11, 0, tzinfo=UTC)
@@ -29,14 +37,28 @@ class FixedClock:
         return NOW
 
 
+class AdjustableClock:
+    def __init__(self, now: datetime = NOW) -> None:
+        self.current = now
+
+    def now(self) -> datetime:
+        return self.current
+
+    def advance(self, delta: timedelta) -> None:
+        self.current += delta
+
+
 def test_settings() -> Settings:
     return Settings(
         database_url=os.environ.get(
             "TEST_DATABASE_URL", "postgresql+asyncpg://catalog:catalog@localhost:5470/orders_test"
         ),
+        payment_url="http://127.0.0.1:1",
         auth_mode="local",
         event_publisher="log",
         outbox_relay_enabled=False,
+        payment_consumer_enabled=False,
+        expire_unpaid_enabled=False,
     )
 
 
@@ -77,6 +99,14 @@ class Stand:
     def relay(self) -> OutboxRelay:
         return self.app.state.relay
 
+    @property
+    def lifecycle(self) -> LifecycleHandler:
+        return self.app.state.lifecycle
+
+    @property
+    def expirer(self) -> ExpireUnpaid:
+        return self.app.state.expirer
+
     async def call(
         self, method: str, path: str, token: str = "", body: str = "", headers: dict[str, str] | None = None
     ) -> httpx.Response:
@@ -93,9 +123,14 @@ class Stand:
         key = idempotency_key or str(uuid.uuid4())
         return await self.call("POST", "/api/v1/orders", token, body, {"Idempotency-Key": key})
 
+    async def post_json(self, path: str, token: str, body: str = "") -> httpx.Response:
+        return await self.call("POST", path, token, body or "{}")
+
     async def clear_tables(self) -> None:
         async with self.engine.begin() as connection:
-            await connection.execute(text("TRUNCATE outbox, idempotency_keys, order_items, orders"))
+            await connection.execute(
+                text("TRUNCATE processed_events, outbox, idempotency_keys, order_items, orders")
+            )
 
     async def orders_in_db(self) -> int:
         async with self.engine.connect() as connection:
@@ -131,6 +166,12 @@ class Stand:
             ).all()
         return [OutboxRow(row[0], row[1], row[2], row[3], row[4]) for row in rows]
 
+    async def event_types(self) -> list[str]:
+        return [row.event_type for row in await self.outbox_rows()]
+
+    async def count_events(self, event_type: str) -> int:
+        return sum(1 for row in await self.outbox_rows() if row.event_type == event_type)
+
     async def given_outbox_row(self, event_type: str, payload: str, occurred_at: datetime = NOW) -> uuid.UUID:
         row_id = uuid.uuid4()
         async with self.engine.begin() as connection:
@@ -152,17 +193,27 @@ class Stand:
         return row_id
 
 
-StandFactory = Callable[[CatalogGateway], Awaitable[Stand]]
+StandFactory = Callable[..., Awaitable[Stand]]
 
 
 @pytest.fixture
 async def start_stand():
     async with AsyncExitStack() as stack:
 
-        async def start(gateway: CatalogGateway, publisher: ExternalEventPublisher | None = None) -> Stand:
+        async def start(
+            gateway: CatalogGateway,
+            publisher: ExternalEventPublisher | None = None,
+            payment: PaymentGateway | None = None,
+            clock: Clock | None = None,
+        ) -> Stand:
             app = create_app(
                 test_settings(),
-                Deps(clock=FixedClock(), catalog=gateway, publisher=publisher or RecordingPublisher()),
+                Deps(
+                    clock=clock or FixedClock(),
+                    catalog=gateway,
+                    payment=payment,
+                    publisher=publisher or RecordingPublisher(),
+                ),
             )
             await stack.enter_async_context(LifespanManager(app))
             client = await stack.enter_async_context(
@@ -268,6 +319,77 @@ async def start_catalog():
         yield start
 
 
+@dataclass(frozen=True)
+class RecordedRequest:
+    method: str
+    path: str
+    headers: dict[str, str]
+
+
+class FakePayment:
+    def __init__(self) -> None:
+        self.requests: list[RecordedRequest] = []
+        self.down = False
+        self.url = ""
+        self.server: asyncio.Server | None = None
+
+    async def __aenter__(self) -> Self:
+        self.server = await asyncio.start_server(self._serve, "127.0.0.1", 0)
+        port = self.server.sockets[0].getsockname()[1]
+        self.url = f"http://127.0.0.1:{port}"
+        return self
+
+    async def __aexit__(self, *exc_info) -> None:
+        assert self.server is not None
+        self.server.close()
+        await self.server.wait_closed()
+
+    def go_down(self) -> None:
+        self.down = True
+
+    async def _serve(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        try:
+            head = await reader.readuntil(b"\r\n\r\n")
+        except asyncio.IncompleteReadError:
+            writer.close()
+            return
+        request_line, *header_lines = head.decode().split("\r\n")
+        method, path, _ = request_line.split(" ", 2)
+        headers = {
+            name.strip().lower(): value.strip()
+            for name, _, value in (line.partition(":") for line in header_lines if line)
+        }
+        length = int(headers.get("content-length", "0"))
+        if length:
+            await reader.readexactly(length)
+        self.requests.append(RecordedRequest(method, path, headers))
+        if self.down:
+            writer.close()
+            return
+        payment_id = path.removeprefix("/api/v1/payments/").removesuffix("/refund")
+        body = (
+            f'{{"id":"{payment_id}","orderId":"{uuid.uuid4()}",'
+            '"amount":100,"currency":"RUB","status":"REFUNDED"}'
+        ).encode()
+        head = (
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+            f"Content-Length: {len(body)}\r\nConnection: close\r\n\r\n"
+        )
+        writer.write(head.encode() + body)
+        await writer.drain()
+        writer.close()
+
+
+@pytest.fixture
+async def start_payment():
+    async with AsyncExitStack() as stack:
+
+        async def start() -> FakePayment:
+            return await stack.enter_async_context(FakePayment())
+
+        yield start
+
+
 def answering(price: str) -> Script:
     async def script(hit: int, exchange: Exchange) -> None:
         await exchange.answer_price(price)
@@ -285,6 +407,10 @@ async def dropping_connection(hit: int, exchange: Exchange) -> None:
 
 def customer_token(customer: uuid.UUID) -> str:
     return f"customer.{customer}"
+
+
+def seller_token(seller: uuid.UUID) -> str:
+    return f"seller.{seller}"
 
 
 def admin_token(admin: uuid.UUID) -> str:

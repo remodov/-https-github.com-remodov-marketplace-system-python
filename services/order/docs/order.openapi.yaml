@@ -3,9 +3,9 @@ info:
   title: Order Service API
   description: |
     REST API сервиса заказов (Tier C) на Python и FastAPI. Покрывает спеку `docs/spec/order-service.md`
-    в объёме девятого шага практикума: идемпотентное создание черновика заказа и чтение заказа.
+    в объёме одиннадцатого шага практикума: идемпотентное создание черновика, чтение и переходы статусов.
     Ошибки - RFC 9457 Problem Details (`application/problem+json`), `type` вида `urn:problem:order:<CODE>`.
-  version: 0.9.0
+  version: 0.11.0
 
 servers:
   - url: http://localhost:8181
@@ -105,6 +105,75 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
 
+  /api/v1/orders/{orderId}/confirm:
+    post:
+      operationId: confirmOrder
+      summary: Подтвердить черновик (DRAFT -> PENDING_PAYMENT)
+      description: Покупатель или администратор. Сумма не меньше 100 рублей, иначе ORDER_BELOW_MINIMUM.
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { description: ORDER_BELOW_MINIMUM, EMPTY_ORDER, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: ORDER_INVALID_STATE, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /api/v1/orders/{orderId}/cancel:
+    post:
+      operationId: cancelOrder
+      summary: Отменить заказ
+      description: |
+        Из DRAFT и PENDING_PAYMENT - без возврата. Из PAID - сага: возврат в сервисе платежей, потом CANCELLED.
+        Платежи недоступны - 503 SERVICE_DEGRADED, заказ остаётся PAID.
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reasonCode]
+              properties:
+                reasonCode: { type: string, example: CHANGED_MIND }
+                comment: { type: string, maxLength: 500 }
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '409': { description: ORDER_INVALID_STATE, REFUND_REJECTED, PAYMENT_NOT_FOUND, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '503': { description: SERVICE_DEGRADED, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /api/v1/orders/{orderId}/ship:
+    post:
+      operationId: shipOrder
+      summary: Передать в доставку (PAID -> SHIPPED), продавец заказа
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [trackingNumber], properties: { trackingNumber: { type: string } } }
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '404': { description: ORDER_NOT_FOUND - чужой заказ, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+        '409': { description: ORDER_INVALID_STATE, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /api/v1/orders/{orderId}/deliver:
+    post:
+      operationId: confirmDelivery
+      summary: Подтвердить получение (SHIPPED -> DELIVERED), покупатель
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '409': { description: ORDER_INVALID_STATE, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+  /api/v1/orders/{orderId}/pay:
+    post:
+      operationId: payOrder
+      summary: Отметить оплату (PENDING_PAYMENT -> PAID), только администратор
+      description: Для стенда. В бою оплату приносит событие PaymentCompleted из marketplace.payments.v1.
+      parameters: [{ name: orderId, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [paymentId], properties: { paymentId: { type: string, format: uuid } } }
+      responses:
+        '200': { description: Заказ, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '409': { description: ORDER_INVALID_STATE, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } } }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -167,6 +236,11 @@ components:
         total: { type: number }
         currency: { type: string, example: RUB }
         shippingAddress: { $ref: '#/components/schemas/Address' }
+        paymentId: { type: string, format: uuid, nullable: true }
+        paidAt: { type: string, format: date-time, nullable: true }
+        shippedAt: { type: string, format: date-time, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        closedAt: { type: string, format: date-time, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
 

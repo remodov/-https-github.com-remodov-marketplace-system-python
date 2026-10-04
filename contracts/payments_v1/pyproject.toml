@@ -1,0 +1,17 @@
+[project]
+name = "marketplace-contracts-payments-v1"
+version = "1.0.0"
+description = "Внешний контракт событий платежа маркетплейса: модели payload, имена заголовков и типов событий"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.11"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["payments_v1*"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"

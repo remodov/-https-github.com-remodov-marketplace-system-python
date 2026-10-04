@@ -1,0 +1,46 @@
+asyncapi: 3.0.0
+
+info:
+  title: Marketplace · события платежа
+  version: 1.0.0
+  description: |
+    Внешний контракт событий Payment Service. Читает Order Service: по `PaymentCompleted`
+    заказ переходит из PENDING_PAYMENT в PAID. Заголовки те же, что у событий заказа:
+    event-id, event-type, event-version, aggregate-type, aggregate-id, occurred-at.
+
+servers:
+  local:
+    host: localhost:9097
+    protocol: kafka
+
+channels:
+  payments:
+    address: marketplace.payments.v1
+    description: События платежа. Ключ сообщения - идентификатор заказа.
+    messages:
+      PaymentCompleted:
+        payload:
+          type: object
+          required: [paymentId, orderId, amount, currency, occurredAt]
+          properties:
+            paymentId: { type: string, format: uuid }
+            orderId: { type: string, format: uuid }
+            amount: { type: string, description: Сумма десятичной строкой. }
+            currency: { type: string, minLength: 3, maxLength: 3 }
+            occurredAt: { type: string, format: date-time }
+      PaymentFailed:
+        payload:
+          type: object
+          required: [paymentId, orderId, reason, occurredAt]
+          properties:
+            paymentId: { type: string, format: uuid }
+            orderId: { type: string, format: uuid }
+            reason: { type: string }
+            occurredAt: { type: string, format: date-time }
+
+operations:
+  consumePaymentEvents:
+    action: receive
+    channel:
+      $ref: '#/channels/payments'
+    description: Order Service переводит заказ в PAID; повторная доставка отбрасывается по event-id.

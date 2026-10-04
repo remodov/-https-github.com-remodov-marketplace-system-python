@@ -66,3 +66,15 @@ class OrderCancelledPayload(OrderEventBase):
 
 class DisputeOpenedPayload(OrderEventBase):
     reason: str
+
+
+class OrderShippedPayload(OrderEventBase):
+    tracking_number: str
+
+
+class OrderDeliveredPayload(OrderEventBase):
+    pass
+
+
+class OrderExpiredPayload(OrderEventBase):
+    pass

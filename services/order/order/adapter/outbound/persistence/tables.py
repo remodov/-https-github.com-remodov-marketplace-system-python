@@ -29,6 +29,11 @@ orders = Table(
     Column("total_amount", Numeric(12, 2), nullable=False),
     Column("shipping_fee", Numeric(12, 2), nullable=False),
     Column("shipping_address", postgresql.JSONB, nullable=False),
+    Column("payment_id", Uuid),
+    Column("paid_at", DateTime(timezone=True)),
+    Column("shipped_at", DateTime(timezone=True)),
+    Column("delivered_at", DateTime(timezone=True)),
+    Column("closed_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
 )
@@ -64,4 +69,12 @@ outbox = Table(
     Column("payload", postgresql.JSONB, nullable=False),
     Column("occurred_at", DateTime(timezone=True), nullable=False),
     Column("published_at", DateTime(timezone=True)),
+)
+
+processed_events = Table(
+    "processed_events",
+    metadata,
+    Column("event_id", Uuid, primary_key=True),
+    Column("event_type", String(128), nullable=False),
+    Column("processed_at", DateTime(timezone=True), nullable=False),
 )

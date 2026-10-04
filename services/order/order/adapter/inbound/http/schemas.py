@@ -34,6 +34,19 @@ class CreateOrderRequest(ApiModel):
     shipping_address: AddressRequest
 
 
+class CancelOrderRequest(ApiModel):
+    reason_code: str
+    comment: str = ""
+
+
+class ShipOrderRequest(ApiModel):
+    tracking_number: str
+
+
+class PayOrderRequest(ApiModel):
+    payment_id: uuid.UUID
+
+
 class AddressResponse(ApiModel):
     country: str
     city: str
@@ -65,6 +78,11 @@ class OrderResponse(ApiModel):
     total: Decimal
     currency: str
     shipping_address: AddressResponse
+    payment_id: uuid.UUID | None
+    paid_at: datetime | None
+    shipped_at: datetime | None
+    delivered_at: datetime | None
+    closed_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -97,6 +115,7 @@ def item_response_of(item: Item) -> OrderItemResponse:
 def response_of(order: Order) -> OrderResponse:
     address = order.shipping_address
     total = order.total
+    state = order.lifecycle
     return OrderResponse(
         id=order.id,
         customer_id=order.customer_id,
@@ -113,6 +132,11 @@ def response_of(order: Order) -> OrderResponse:
             postal_code=address.postal_code,
             pickup_point=address.pickup_point,
         ),
+        payment_id=state.payment_id,
+        paid_at=state.paid_at,
+        shipped_at=state.shipped_at,
+        delivered_at=state.delivered_at,
+        closed_at=state.closed_at,
         created_at=order.created_at,
         updated_at=order.updated_at,
     )

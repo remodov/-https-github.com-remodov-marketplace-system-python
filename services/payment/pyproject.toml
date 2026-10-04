@@ -1,0 +1,35 @@
+[project]
+name = "marketplace-payment"
+version = "0.11.0"
+description = "Платежи маркетплейса: автомат статусов, одна авторизация на заказ, безопасный повторный возврат; FastAPI и asyncpg без ORM"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "asyncpg>=0.29",
+  "pydantic>=2.11",
+  "pydantic-settings>=2.3",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23", "httpx>=0.27", "asgi-lifespan>=2.1", "ruff>=0.5"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["payment*"]
+
+[tool.setuptools.package-data]
+payment = ["schema.sql"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"

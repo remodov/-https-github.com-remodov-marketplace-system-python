@@ -2,12 +2,31 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from orders_v1 import OrderCreatedPayload
+from orders_v1 import (
+    OrderCancelledPayload,
+    OrderConfirmedPayload,
+    OrderCreatedPayload,
+    OrderDeliveredPayload,
+    OrderExpiredPayload,
+    OrderPaidPayload,
+    OrderShippedPayload,
+)
 from sqlalchemy import Text, cast, insert, literal, select, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from ....core.order.aggregate.events import Event, OrderCreated
+from ....core.order.aggregate.events import (
+    Event,
+    OrderCancelled,
+    OrderConfirmed,
+    OrderCreated,
+    OrderDelivered,
+    OrderEvent,
+    OrderExpired,
+    OrderPaid,
+    OrderShipped,
+)
+from ....core.order.aggregate.order import Money
 from ....core.order.port.out import IdGenerator, OutboxMessage
 from .tables import outbox
 from .unit_of_work import session_in_scope
@@ -85,12 +104,38 @@ def payload_of(event: Event) -> bytes:
     match event:
         case OrderCreated():
             return OrderCreatedPayload(
-                order_id=event.order_id,
-                customer_id=event.customer_id,
-                seller_id=event.seller_id,
-                occurred_at=event.at,
-                total_amount=f"{event.total.amount:.2f}",
-                currency=event.total.currency,
-                items_count=len(event.items),
+                **base_of(event), **money_of(event.total), items_count=len(event.items)
             ).encode()
+        case OrderConfirmed():
+            return OrderConfirmedPayload(**base_of(event), **money_of(event.total)).encode()
+        case OrderPaid():
+            return OrderPaidPayload(
+                **base_of(event), **money_of(event.total), payment_id=event.payment_id
+            ).encode()
+        case OrderCancelled():
+            return OrderCancelledPayload(
+                **base_of(event),
+                previous_status=event.previous_status.value,
+                reason=event.reason.code,
+                refund_id=event.refund_id,
+            ).encode()
+        case OrderExpired():
+            return OrderExpiredPayload(**base_of(event)).encode()
+        case OrderShipped():
+            return OrderShippedPayload(**base_of(event), tracking_number=event.tracking_number).encode()
+        case OrderDelivered():
+            return OrderDeliveredPayload(**base_of(event)).encode()
     raise NotInContract(f"событие {event.event_type} не описано во внешнем контракте")
+
+
+def base_of(event: OrderEvent) -> dict:
+    return {
+        "order_id": event.order_id,
+        "customer_id": event.customer_id,
+        "seller_id": event.seller_id,
+        "occurred_at": event.at,
+    }
+
+
+def money_of(total: Money) -> dict:
+    return {"total_amount": f"{total.amount:.2f}", "currency": total.currency}

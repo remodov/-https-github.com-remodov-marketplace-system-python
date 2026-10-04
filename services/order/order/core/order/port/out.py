@@ -13,11 +13,26 @@ from ..aggregate.order import Money, Order
 class OrderRepository(Protocol):
     async def insert(self, order: Order) -> None: ...
     async def by_id(self, order_id: uuid.UUID) -> Order: ...
+    async def by_id_for_update(self, order_id: uuid.UUID) -> Order: ...
+    async def update(self, order: Order) -> None: ...
+    async def pending_payment_before(self, before: datetime, limit: int) -> list[uuid.UUID]: ...
 
 
 @runtime_checkable
 class CatalogGateway(Protocol):
     async def prices(self, product_ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, Money]: ...
+
+
+@runtime_checkable
+class PaymentGateway(Protocol):
+    async def request_refund(
+        self, order_id: uuid.UUID, payment_id: uuid.UUID, amount: Money, idempotency_key: str
+    ) -> uuid.UUID: ...
+
+
+@runtime_checkable
+class ProcessedEvents(Protocol):
+    async def mark_processed(self, event_id: uuid.UUID, event_type: str, now: datetime) -> bool: ...
 
 
 @runtime_checkable

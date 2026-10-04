@@ -1,25 +1,33 @@
 from dataclasses import dataclass
+from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..adapter.inbound.http.auth import Authenticator, JwtAuthenticator, LocalTokens
+from ..adapter.inbound.kafka.payment_consumer import PaymentConsumer, PaymentEventHandler
 from ..adapter.outbound.catalog.client import CatalogClient, CatalogSettings
 from ..adapter.outbound.kafka.publisher import KafkaPublisher
+from ..adapter.outbound.payment.client import PaymentClient, PaymentSettings
 from ..adapter.outbound.persistence.idempotency_repository import SqlAlchemyIdempotencyKeys
 from ..adapter.outbound.persistence.order_repository import SqlAlchemyOrderRepository
 from ..adapter.outbound.persistence.outbox_repository import SqlAlchemyOutbox
+from ..adapter.outbound.persistence.processed_events_repository import SqlAlchemyProcessedEvents
 from ..adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from ..adapter.outbound.system.log_publisher import LogPublisher
 from ..adapter.outbound.system.system import SystemClock, UuidGenerator
-from ..core.order.port.out import CatalogGateway, Clock, ExternalEventPublisher, IdGenerator
+from ..core.order.port.out import CatalogGateway, Clock, ExternalEventPublisher, IdGenerator, PaymentGateway
 from ..core.order.query.queries import QueryHandler
 from ..core.order.usecase.create_order import CreateOrderHandler
+from ..core.order.usecase.expire_unpaid import ExpireUnpaid
+from ..core.order.usecase.lifecycle import LifecycleHandler
 from ..core.order.usecase.relay_outbox import OutboxRelay
 from .config import Settings
 
 OUTBOX_BATCH_SIZE = 100
 OUTBOX_BATCH_TIMEOUT_SECONDS = 10.0
 OUTBOX_RELAY_STOP_TIMEOUT_SECONDS = 15.0
+EXPIRE_BATCH_SIZE = 200
+BACKGROUND_STOP_TIMEOUT_SECONDS = 15.0
 
 
 @dataclass(frozen=True)
@@ -28,14 +36,17 @@ class Deps:
     ids: IdGenerator | None = None
     authenticator: Authenticator | None = None
     catalog: CatalogGateway | None = None
+    payment: PaymentGateway | None = None
     publisher: ExternalEventPublisher | None = None
 
 
 @dataclass(frozen=True)
 class Handlers:
     create: CreateOrderHandler
+    lifecycle: LifecycleHandler
     queries: QueryHandler
     relay: OutboxRelay
+    expirer: ExpireUnpaid
 
 
 def catalog_settings(base_url: str) -> CatalogSettings:
@@ -50,8 +61,16 @@ def catalog_settings(base_url: str) -> CatalogSettings:
     )
 
 
+def payment_settings(base_url: str) -> PaymentSettings:
+    return PaymentSettings(base_url=base_url, connect_timeout=0.5, request_timeout=2.0)
+
+
 def catalog_of(settings: Settings, deps: Deps) -> CatalogGateway:
     return deps.catalog or CatalogClient(catalog_settings(settings.catalog_url))
+
+
+def payment_of(settings: Settings, deps: Deps) -> PaymentGateway:
+    return deps.payment or PaymentClient(payment_settings(settings.payment_url))
 
 
 def publisher_of(settings: Settings, deps: Deps) -> ExternalEventPublisher:
@@ -63,18 +82,33 @@ def publisher_of(settings: Settings, deps: Deps) -> ExternalEventPublisher:
 
 
 def wire_handlers(
-    sessions: async_sessionmaker, catalog: CatalogGateway, publisher: ExternalEventPublisher, deps: Deps
+    sessions: async_sessionmaker,
+    catalog: CatalogGateway,
+    payment: PaymentGateway,
+    publisher: ExternalEventPublisher,
+    deps: Deps,
+    expire_after: timedelta,
 ) -> Handlers:
     clock = deps.clock or SystemClock()
     ids = deps.ids or UuidGenerator()
     orders = SqlAlchemyOrderRepository(sessions)
     keys = SqlAlchemyIdempotencyKeys(sessions)
     outbox = SqlAlchemyOutbox(sessions, ids)
+    processed = SqlAlchemyProcessedEvents(sessions)
     uow = SqlAlchemyUnitOfWork(sessions)
+    lifecycle = LifecycleHandler(orders, outbox, payment, processed, clock, uow)
     return Handlers(
         create=CreateOrderHandler(orders, catalog, keys, outbox, clock, ids, uow),
+        lifecycle=lifecycle,
         queries=QueryHandler(orders),
         relay=OutboxRelay(outbox, publisher, clock, uow, OUTBOX_BATCH_SIZE),
+        expirer=ExpireUnpaid(orders, lifecycle, clock, expire_after, EXPIRE_BATCH_SIZE),
+    )
+
+
+def payment_consumer_of(settings: Settings, lifecycle: LifecycleHandler) -> PaymentConsumer:
+    return PaymentConsumer(
+        settings.kafka_brokers, settings.kafka_group, settings.payments_topic, PaymentEventHandler(lifecycle)
     )
 
 

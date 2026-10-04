@@ -1,16 +1,29 @@
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 
-from ...errors import invalid
-from .events import Event, OrderCreated, snapshots_of
+from ...errors import AppError, conflict, invalid
+from .events import (
+    Event,
+    OrderCancelled,
+    OrderConfirmed,
+    OrderCreated,
+    OrderDelivered,
+    OrderEvent,
+    OrderExpired,
+    OrderPaid,
+    OrderShipped,
+    snapshots_of,
+)
 
 CURRENCY = "RUB"
 MAX_QUANTITY = 999
 KOPECK = Decimal("0.01")
+MIN_CONFIRM_AMOUNT = Decimal(100)
+MAX_CANCELLATION_COMMENT = 500
 
 
 class Status(StrEnum):
@@ -52,6 +65,32 @@ class Address:
     street: str
     postal_code: str
     pickup_point: str = ""
+
+
+@dataclass(frozen=True)
+class CancellationReason:
+    code: str
+    comment: str = ""
+
+    @classmethod
+    def create(cls, code: str, comment: str) -> "CancellationReason":
+        code = code.strip().upper()
+        if not code:
+            raise invalid("VALIDATION_ERROR", "Нужен код причины отмены")
+        if len(comment) > MAX_CANCELLATION_COMMENT:
+            raise invalid(
+                "VALIDATION_ERROR", f"Комментарий к отмене не длиннее {MAX_CANCELLATION_COMMENT} символов"
+            )
+        return cls(code, comment)
+
+
+@dataclass(frozen=True)
+class LifecycleState:
+    payment_id: uuid.UUID | None = None
+    paid_at: datetime | None = None
+    shipped_at: datetime | None = None
+    delivered_at: datetime | None = None
+    closed_at: datetime | None = None
 
 
 class Item:
@@ -132,6 +171,7 @@ class Order:
         address: Address,
         created_at: datetime,
         updated_at: datetime,
+        lifecycle: LifecycleState,
     ) -> None:
         self._id = id
         self._customer_id = customer_id
@@ -142,6 +182,7 @@ class Order:
         self._address = address
         self._created_at = created_at
         self._updated_at = updated_at
+        self._lifecycle = lifecycle
         self._events: list[Event] = []
 
     @classmethod
@@ -165,8 +206,10 @@ class Order:
             if item.product_id in seen:
                 raise invalid("VALIDATION_ERROR", f"Товар {item.product_id} повторяется в позициях заказа")
             seen.add(item.product_id)
-        order = cls(id, customer_id, seller_id, Status.DRAFT, items, ZERO_RUB, address, now, now)
-        order._events.append(OrderCreated(id, customer_id, seller_id, order.total, snapshots_of(items), now))
+        order = cls(
+            id, customer_id, seller_id, Status.DRAFT, items, ZERO_RUB, address, now, now, LifecycleState()
+        )
+        order._register(OrderCreated, now, total=order.total, items=snapshots_of(items))
         return order
 
     @classmethod
@@ -181,8 +224,20 @@ class Order:
         address: Address,
         created_at: datetime,
         updated_at: datetime,
+        lifecycle: LifecycleState,
     ) -> "Order":
-        return cls(id, customer_id, seller_id, status, items, shipping_fee, address, created_at, updated_at)
+        return cls(
+            id,
+            customer_id,
+            seller_id,
+            status,
+            items,
+            shipping_fee,
+            address,
+            created_at,
+            updated_at,
+            lifecycle,
+        )
 
     @property
     def id(self) -> uuid.UUID:
@@ -221,6 +276,10 @@ class Order:
         return self._updated_at
 
     @property
+    def lifecycle(self) -> LifecycleState:
+        return self._lifecycle
+
+    @property
     def total(self) -> Money:
         total = ZERO_RUB
         for item in self._items:
@@ -230,6 +289,82 @@ class Order:
     def owned_by(self, customer_id: uuid.UUID) -> bool:
         return self._customer_id == customer_id
 
+    def sold_by(self, seller_id: uuid.UUID) -> bool:
+        return self._seller_id == seller_id
+
+    def confirm(self, now: datetime) -> None:
+        self._require(Status.DRAFT, "подтвердить")
+        if not self._items:
+            raise invalid("EMPTY_ORDER", "В заказе нет ни одной позиции")
+        total = self.total
+        if total.amount < MIN_CONFIRM_AMOUNT:
+            raise invalid(
+                "ORDER_BELOW_MINIMUM",
+                f"Сумма заказа {total.amount:.2f} меньше минимальной {MIN_CONFIRM_AMOUNT:.2f}",
+            )
+        self._move_to(Status.PENDING_PAYMENT, now)
+        self._register(OrderConfirmed, now, total=total)
+
+    def mark_paid(self, payment_id: uuid.UUID, now: datetime) -> None:
+        self._require(Status.PENDING_PAYMENT, "оплатить")
+        self._move_to(Status.PAID, now)
+        self._lifecycle = replace(self._lifecycle, payment_id=payment_id, paid_at=now)
+        self._register(OrderPaid, now, payment_id=payment_id, total=self.total)
+
+    def cancel(self, reason: CancellationReason, now: datetime) -> None:
+        if self._status not in (Status.DRAFT, Status.PENDING_PAYMENT):
+            raise self._invalid_state("отменить без возврата")
+        previous = self._status
+        self._close(Status.CANCELLED, now)
+        self._register(OrderCancelled, now, previous_status=previous, reason=reason, refund_id=None)
+
+    def cancel_after_payment(self, reason: CancellationReason, refund_id: uuid.UUID, now: datetime) -> None:
+        self._require(Status.PAID, "отменить с возвратом")
+        previous = self._status
+        self._close(Status.CANCELLED, now)
+        self._register(OrderCancelled, now, previous_status=previous, reason=reason, refund_id=refund_id)
+
+    def expire(self, now: datetime) -> None:
+        self._require(Status.PENDING_PAYMENT, "закрыть по таймауту")
+        self._close(Status.EXPIRED, now)
+        self._register(OrderExpired, now)
+
+    def mark_shipped(self, tracking_number: str, now: datetime) -> None:
+        if not tracking_number.strip():
+            raise invalid("VALIDATION_ERROR", "Нужен трек-номер отправления")
+        self._require(Status.PAID, "передать в доставку")
+        self._move_to(Status.SHIPPED, now)
+        self._lifecycle = replace(self._lifecycle, shipped_at=now)
+        self._register(OrderShipped, now, tracking_number=tracking_number)
+
+    def confirm_delivery(self, now: datetime) -> None:
+        self._require(Status.SHIPPED, "подтвердить получение")
+        self._move_to(Status.DELIVERED, now)
+        self._lifecycle = replace(self._lifecycle, delivered_at=now)
+        self._register(OrderDelivered, now)
+
     def pull_events(self) -> list[Event]:
         events, self._events = self._events, []
         return events
+
+    def _require(self, expected: Status, action: str) -> None:
+        if self._status is not expected:
+            raise self._invalid_state(action)
+
+    def _invalid_state(self, action: str) -> AppError:
+        return conflict("ORDER_INVALID_STATE", f"Заказ в статусе {self._status} нельзя {action}")
+
+    def _move_to(self, next_status: Status, now: datetime) -> None:
+        self._status = next_status
+        self._updated_at = now
+
+    def _close(self, next_status: Status, now: datetime) -> None:
+        self._move_to(next_status, now)
+        self._lifecycle = replace(self._lifecycle, closed_at=now)
+
+    def _register(self, event_class: type[OrderEvent], now: datetime, **fields) -> None:
+        self._events.append(
+            event_class(
+                order_id=self._id, customer_id=self._customer_id, seller_id=self._seller_id, at=now, **fields
+            )
+        )
