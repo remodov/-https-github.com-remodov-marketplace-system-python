@@ -49,7 +49,7 @@ async def search(
 
 @router.get("/{id}")
 async def by_id(request: Request, id: uuid.UUID) -> Card:
-    return card_of(await service_of(request).by_id(id))
+    return await service_of(request).card(id)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
