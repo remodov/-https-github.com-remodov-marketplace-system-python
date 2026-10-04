@@ -14,12 +14,10 @@ spec:
       labels:
         app: catalog-starter
     spec:
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
+      # TODO шаг 15: контейнер не должен бежать от root.
       containers:
         - name: app
-          image: ghcr.io/remodov/catalog-starter-python:0.1.0
+          image: ghcr.io/remodov/catalog-starter-python:latest
           ports:
             - containerPort: 8182
           env:
@@ -29,29 +27,9 @@ spec:
               value: redis://redis:6379
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector:4318
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
-          readinessProbe:
-            httpGet:
-              path: /health/ready
-              port: 8182
-            initialDelaySeconds: 2
-            periodSeconds: 5
-          livenessProbe:
-            httpGet:
-              path: /health/live
-              port: 8182
-            initialDelaySeconds: 5
-            periodSeconds: 10
-          lifecycle:
-            preStop:
-              exec:
-                command: ["sleep", "5"]
+          # TODO шаг 15: запросы и лимиты ресурсов, пробы готовности и живости,
+          # корректное завершение. Без проб кластер считает под готовым сразу,
+          # и первые запросы уходят в ещё не поднявшееся приложение.
 ---
 apiVersion: v1
 kind: Service

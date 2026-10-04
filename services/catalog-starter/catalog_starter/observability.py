@@ -1,8 +1,7 @@
-import asyncio
 import time
 from collections.abc import Awaitable, Callable
 
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -10,8 +9,8 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
-from opentelemetry.sdk.trace.sampling import ParentBased, Sampler, TraceIdRatioBased
-from prometheus_client import CONTENT_TYPE_LATEST, Histogram, generate_latest
+from opentelemetry.sdk.trace.sampling import ALWAYS_OFF, Sampler
+from prometheus_client import Histogram
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .config import Settings
@@ -29,22 +28,11 @@ request_duration = Histogram(
 
 
 def mount(app: FastAPI, ready: ReadyCheck) -> None:
-    @app.get("/health/live", status_code=204)
-    async def live() -> Response:
-        return Response(status_code=204)
-
-    @app.get("/health/ready", status_code=204)
-    async def ready_for_traffic(request: Request) -> Response:
-        try:
-            async with asyncio.timeout(READY_TIMEOUT_SECONDS):
-                await ready()
-        except Exception:
-            return not_ready(request.url.path)
-        return Response(status_code=204)
-
-    @app.get("/metrics")
-    async def metrics() -> Response:
-        return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+    # TODO шаг 15: пробы и метрики.
+    # Кластеру нужны /health/live и /health/ready (готовность ждёт ready не дольше
+    # READY_TIMEOUT_SECONDS и при отказе отвечает not_ready), Prometheus нужен /metrics
+    # через generate_latest с типом CONTENT_TYPE_LATEST.
+    pass
 
 
 def not_ready(instance: str) -> JSONResponse:
@@ -90,7 +78,8 @@ def route_template(scope: Scope) -> str:
 
 
 def sampler(ratio: float) -> Sampler:
-    return ParentBased(TraceIdRatioBased(ratio))
+    # TODO шаг 15: сэмплирование трасс по доле из настроек, с уважением к решению родителя.
+    return ALWAYS_OFF
 
 
 def tracing(app: FastAPI, settings: Settings) -> TracerProvider | None:
