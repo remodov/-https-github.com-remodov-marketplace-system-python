@@ -30,10 +30,6 @@ class CreateOrderResult:
     created: bool
 
 
-class KeyTakenByOther(Exception):
-    pass
-
-
 class CreateOrderHandler:
     def __init__(
         self,
@@ -51,31 +47,17 @@ class CreateOrderHandler:
         self.ids = ids
         self.uow = uow
 
+    # TODO шаг 9: до работы спросить у keys прежний заказ по ключу и хешу (конфликт
+    # хеша уходит наружу как есть), после сборки заказа записать его и занять ключ в
+    # одной единице работы; если ключ занять не удалось, вернуть чужой заказ с created=False.
     async def handle(self, cmd: CreateOrder) -> CreateOrderResult:
         if not cmd.lines:
             raise invalid("EMPTY_ORDER", "В заказе нет ни одной позиции")
         require_single_seller(cmd.lines)
-        existing = await self.keys.find(cmd.idempotency_key, cmd.request_hash)
-        if existing is not None:
-            return await self.replay(existing)
         order = await self.build(cmd)
-        try:
-            async with self.uow.begin():
-                await self.orders.insert(order)
-                claimed = await self.keys.claim(
-                    cmd.idempotency_key, cmd.request_hash, order.id, order.created_at
-                )
-                if not claimed:
-                    raise KeyTakenByOther
-        except KeyTakenByOther:
-            winner = await self.keys.find(cmd.idempotency_key, cmd.request_hash)
-            if winner is None:
-                raise
-            return await self.replay(winner)
+        async with self.uow.begin():
+            await self.orders.insert(order)
         return CreateOrderResult(order, created=True)
-
-    async def replay(self, order_id: uuid.UUID) -> CreateOrderResult:
-        return CreateOrderResult(await self.orders.by_id(order_id), created=False)
 
     async def build(self, cmd: CreateOrder) -> Order:
         prices = await self.catalog.prices(product_ids_of(cmd.lines))
