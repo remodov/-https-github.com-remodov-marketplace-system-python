@@ -14,8 +14,9 @@
 |---|---|---|
 | `services/catalog-starter` | карточки товаров, остатки, резерв, поиск | FastAPI, SQLAlchemy 2 (async), Alembic, Redis |
 | `services/catalog` | те же карточки по-взрослому: слои, спецификация, роли, владение, журнал администратора | FastAPI, SQLAlchemy 2 Core (async), Alembic, PyJWT, архитектурные тесты |
+| `services/order` | оформление заказов: агрегат `Order`, цены из каталога, клиент с таймаутами, повтором и размыкателем | FastAPI, SQLAlchemy 2 Core (async), Alembic, httpx, PyJWT |
 
-Дальше по плану появляются `services/order`, `services/payment`, `services/notification`,
+Дальше по плану появляются `services/payment`, `services/notification`,
 `services/bff`, `web` и `contracts` - по образцу Java- и Go-версий ([план](docs/practicum/PLAN.md)).
 
 ## С чего начинать
@@ -44,6 +45,15 @@ pip install -e "services/catalog[dev]"
 cd services/catalog
 python -m pytest -q
 uvicorn catalog.main:app --port 8180
+```
+
+Сервис заказов из восьмого шага ставится так же и ходит в каталог на `8180`:
+
+```bash
+pip install -e "services/order[dev]"
+cd services/order
+python -m pytest -q
+uvicorn order.main:app --port 8181
 ```
 
 ## Поднять стенд

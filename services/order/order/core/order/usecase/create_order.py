@@ -1,0 +1,70 @@
+import uuid
+from collections.abc import Sequence
+from dataclasses import dataclass
+
+from ...errors import invalid, not_found
+from ...security.principal import Principal
+from ..aggregate.order import Address, Item, Order
+from ..port.out import CatalogGateway, Clock, IdGenerator, OrderRepository, UnitOfWork
+
+
+@dataclass(frozen=True)
+class OrderLine:
+    product_id: uuid.UUID
+    seller_id: uuid.UUID
+    quantity: int
+
+
+@dataclass(frozen=True)
+class CreateOrder:
+    customer: Principal
+    lines: Sequence[OrderLine]
+    shipping_address: Address
+
+
+class CreateOrderHandler:
+    def __init__(
+        self,
+        orders: OrderRepository,
+        catalog: CatalogGateway,
+        clock: Clock,
+        ids: IdGenerator,
+        uow: UnitOfWork,
+    ) -> None:
+        self.orders = orders
+        self.catalog = catalog
+        self.clock = clock
+        self.ids = ids
+        self.uow = uow
+
+    async def handle(self, cmd: CreateOrder) -> Order:
+        if not cmd.lines:
+            raise invalid("EMPTY_ORDER", "В заказе нет ни одной позиции")
+        require_single_seller(cmd.lines)
+        prices = await self.catalog.prices(product_ids_of(cmd.lines))
+        items = []
+        for line in cmd.lines:
+            price = prices.get(line.product_id)
+            if price is None:
+                raise not_found("PRODUCT_NOT_FOUND", f"Товар {line.product_id} не найден в каталоге")
+            items.append(
+                Item.create(self.ids.new_id(), line.product_id, line.seller_id, line.quantity, price)
+            )
+        order = Order.create(
+            self.ids.new_id(), cmd.customer.sub, items, cmd.shipping_address, self.clock.now()
+        )
+        async with self.uow.begin():
+            await self.orders.insert(order)
+        return order
+
+
+def require_single_seller(lines: Sequence[OrderLine]) -> None:
+    for line in lines[1:]:
+        if line.seller_id != lines[0].seller_id:
+            raise invalid(
+                "MULTI_SELLER_NOT_SUPPORTED", "В одном заказе могут быть товары только одного продавца"
+            )
+
+
+def product_ids_of(lines: Sequence[OrderLine]) -> list[uuid.UUID]:
+    return list(dict.fromkeys(line.product_id for line in lines))

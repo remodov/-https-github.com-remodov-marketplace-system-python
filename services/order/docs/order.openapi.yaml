@@ -1,0 +1,166 @@
+openapi: 3.0.3
+info:
+  title: Order Service API
+  description: |
+    REST API сервиса заказов (Tier C) на Python и FastAPI. Покрывает спеку `docs/spec/order-service.md`
+    в объёме восьмого шага практикума: создание черновика заказа и чтение заказа.
+    Ошибки - RFC 9457 Problem Details (`application/problem+json`), `type` вида `urn:problem:order:<CODE>`.
+  version: 0.8.0
+
+servers:
+  - url: http://localhost:8181
+    description: Local
+
+security:
+  - bearerAuth: []
+
+paths:
+  /api/v1/orders:
+    post:
+      operationId: createOrder
+      summary: Создать черновик заказа
+      description: |
+        Цены позиций берутся из Catalog Service синхронно. Один заказ - товары одного продавца (BR-014).
+        Если каталог недоступен, заказ не создаётся и возвращается `503 SERVICE_DEGRADED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Черновик создан
+          headers:
+            Location:
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '400':
+          description: VALIDATION_ERROR, MALFORMED_REQUEST, EMPTY_ORDER, MULTI_SELLER_NOT_SUPPORTED
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '401':
+          description: TOKEN_MISSING, TOKEN_INVALID
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '403':
+          description: ACCESS_DENIED
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '404':
+          description: PRODUCT_NOT_FOUND - каталог не нашёл товар
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '503':
+          description: SERVICE_DEGRADED - каталог недоступен, заказ не создан
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+  /api/v1/orders/{orderId}:
+    get:
+      operationId: getOrder
+      summary: Получить заказ
+      description: Владелец видит свой заказ, администратор - любой; чужой заказ отвечает 404.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Заказ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
+        '404':
+          description: ORDER_NOT_FOUND
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Address:
+      type: object
+      required: [country, city, street, postalCode]
+      properties:
+        country: { type: string, example: RU }
+        city: { type: string, example: Москва }
+        street: { type: string, example: Тверская, 1 }
+        postalCode: { type: string, example: '125009' }
+        pickupPoint: { type: string }
+
+    OrderItemRequest:
+      type: object
+      required: [productId, sellerId, quantity]
+      properties:
+        productId: { type: string, format: uuid }
+        sellerId: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1, maximum: 999 }
+
+    CreateOrderRequest:
+      type: object
+      required: [items, shippingAddress]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/OrderItemRequest' }
+        shippingAddress: { $ref: '#/components/schemas/Address' }
+
+    OrderItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        productId: { type: string, format: uuid }
+        sellerId: { type: string, format: uuid }
+        quantity: { type: integer }
+        unitPrice: { type: number, example: 2490.5 }
+        lineTotal: { type: number, example: 4981 }
+
+    Order:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        customerId: { type: string, format: uuid }
+        sellerId: { type: string, format: uuid }
+        status:
+          type: string
+          enum: [DRAFT, PENDING_PAYMENT, PAID, SHIPPED, DELIVERED, COMPLETED, EXPIRED, CANCELLED, DISPUTE, REFUNDED]
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/OrderItem' }
+        shippingFee: { type: number }
+        total: { type: number }
+        currency: { type: string, example: RUB }
+        shippingAddress: { $ref: '#/components/schemas/Address' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    Problem:
+      type: object
+      properties:
+        type: { type: string, example: 'urn:problem:order:SERVICE_DEGRADED' }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+        code: { type: string }
+        errors:
+          type: object
+          additionalProperties: { type: string }
