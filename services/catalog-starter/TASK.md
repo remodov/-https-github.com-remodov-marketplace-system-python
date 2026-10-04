@@ -61,6 +61,6 @@ python -m pytest -q
 
 ## Материал
 
-- Валидация в FastAPI: https://vikulin-va.ru/fastapi/validation-and-pydantic/
-- Ошибки и обработчики: https://vikulin-va.ru/fastapi/errors-and-handlers/
+- Валидация в FastAPI: https://vikulin-va.ru/fastapi/pydantic-validation/
+- Ошибки и обработчики: https://vikulin-va.ru/fastapi/middleware-and-errors/
 - Ошибки в REST: https://vikulin-va.ru/rest-api/python/errors/
