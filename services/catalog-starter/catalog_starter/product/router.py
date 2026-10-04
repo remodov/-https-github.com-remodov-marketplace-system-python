@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, Request, status
 from pydantic import BaseModel, Field
 
 from .card import Card, card_of
@@ -28,10 +28,9 @@ def service_of(request: Request) -> ProductService:
 async def search(
     request: Request,
     query: str = "",
-    max_price: Decimal | None = Query(None, alias="maxPrice", gt=0),
 ) -> list[Card]:
-    service = service_of(request)
-    found = await service.search(query) if max_price is None else await service.cheaper_than(max_price)
+    # TODO шаг 2: необязательный параметр maxPrice (Query с alias и gt=0) и выбор сценария
+    found = await service_of(request).search(query)
     return [card_of(p) for p in found]
 
 

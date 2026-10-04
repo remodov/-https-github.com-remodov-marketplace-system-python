@@ -17,9 +17,7 @@ class ProductService:
         async with self.uow() as store:
             return await store.all() if part == "" else await store.by_title(part)
 
-    async def cheaper_than(self, max_price: Decimal) -> list[Product]:
-        async with self.uow() as store:
-            return await store.cheaper(max_price)
+    # TODO шаг 2: сценарий чтения cheaper_than
 
     async def by_id(self, product_id: uuid.UUID) -> Product:
         async with self.uow() as store:
