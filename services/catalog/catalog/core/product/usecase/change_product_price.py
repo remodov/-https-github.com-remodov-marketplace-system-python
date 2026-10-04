@@ -2,19 +2,9 @@ import uuid
 from dataclasses import dataclass
 from decimal import Decimal
 
-from ...errors import invalid
 from ...security.principal import Principal
 from ..aggregate.product import Product
-from ..port.out import (
-    ACTION_PRODUCT_PRICE_CHANGED,
-    AuditEntry,
-    AuditLogger,
-    Clock,
-    IdGenerator,
-    ProductRepository,
-    UnitOfWork,
-)
-from .ownership import require_ownership
+from ..port.out import AuditLogger, Clock, IdGenerator, ProductRepository, UnitOfWork
 
 
 @dataclass(frozen=True)
@@ -39,28 +29,7 @@ class ChangeProductPriceHandler:
         self.ids = ids
         self.uow = uow
 
+    # TODO шаг 7: загрузить товар под блокировкой внутри единицы работы, проверить владение,
+    # сменить цену методом агрегата, сохранить, для администратора записать PRODUCT_PRICE_CHANGED в журнал.
     async def handle(self, cmd: ChangeProductPrice) -> Product:
-        if cmd.new_price <= 0:
-            raise invalid("INVALID_PRICE", f"Цена должна быть больше нуля, а не {cmd.new_price}")
-        async with self.uow.begin():
-            product = await self.products.by_id_for_update(cmd.product_id)
-            require_ownership(product, cmd.requester)
-            previous = product.price
-            product.change_price(cmd.new_price, self.clock.now())
-            await self.products.update(product)
-            if cmd.requester.is_admin:
-                await self.audit.record(
-                    AuditEntry(
-                        id=self.ids.new_id(),
-                        actor_id=cmd.requester.sub,
-                        action=ACTION_PRODUCT_PRICE_CHANGED,
-                        product_id=product.id,
-                        occurred_at=self.clock.now(),
-                        metadata={
-                            "from": str(previous),
-                            "to": str(product.price),
-                            "ownerSellerId": str(product.seller_id),
-                        },
-                    )
-                )
-            return product
+        raise NotImplementedError("TODO шаг 7: смена цены ещё не реализована")

@@ -115,11 +115,9 @@ class Product:
     def owned_by(self, seller_id: uuid.UUID) -> bool:
         return self._seller_id == seller_id
 
+    # TODO шаг 7: правило BR-P01 - цена больше нуля, округление до копеек, обновить updated_at.
     def change_price(self, new_price: Decimal, now: datetime) -> None:
-        if new_price <= 0:
-            raise invalid("INVALID_PRICE", f"Цена должна быть больше нуля, а не {new_price}")
-        self._price = to_kopecks(new_price)
-        self._updated_at = now
+        raise invalid("INVALID_PRICE", "TODO шаг 7: правило смены цены ещё не реализовано")
 
     def publish(self, now: datetime) -> None:
         if self._status not in (Status.DRAFT, Status.HIDDEN):

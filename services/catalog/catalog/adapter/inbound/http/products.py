@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from ....core.product.aggregate.product import Status
 from ....core.product.port.out import ListFilter, SortField
 from ....core.product.query.queries import GetProduct, ListMyProducts, QueryHandler
-from ....core.product.usecase.change_product_price import ChangeProductPrice, ChangeProductPriceHandler
+from ....core.product.usecase.change_product_price import ChangeProductPriceHandler
 from ....core.product.usecase.change_status import ChangeStatusHandler, HideProduct, PublishProduct
 from ....core.product.usecase.create_product import CreateProduct, CreateProductHandler
 from ....core.security.principal import Principal, Role
@@ -92,15 +92,14 @@ def product_router(
         product = await transitions.hide(HideProduct(product_id=product_id, requester=principal))
         return response_of(product)
 
-    @router.patch("/{product_id}/price")
+    # TODO шаг 7: маршрут PATCH /{product_id}/price -> change_product_price
+    # TODO шаг 7: обработчик смены цены - принять ChangePriceRequest (ноль отсекает схема кодом VALIDATION_ERROR
+    # ещё до ядра), вызвать price.handle с ChangeProductPrice, вернуть response_of.
     async def change_product_price(
         product_id: uuid.UUID,
         body: ChangePriceRequest,
         principal: Principal = Depends(seller_or_admin),
     ) -> ProductResponse:
-        product = await price.handle(
-            ChangeProductPrice(product_id=product_id, requester=principal, new_price=body.price)
-        )
-        return response_of(product)
+        raise NotImplementedError("TODO шаг 7: смена цены ещё не реализована")
 
     return router
