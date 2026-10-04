@@ -58,6 +58,18 @@ class Product(Base):
     def version(self) -> int:
         return self._version
 
+    def change_price(self, new_price: Decimal) -> None:
+        if new_price <= 0:
+            raise invalid("цена должна быть больше нуля")
+        self._price = new_price
+
+    def change_stock(self, delta: int) -> None:
+        if delta == 0:
+            raise invalid("изменение остатка не может быть нулевым")
+        if self._stock + delta < 0:
+            raise OutOfStockError(self._id, -delta, self._stock)
+        self._stock += delta
+
     def reserve(self, quantity: int) -> None:
         if quantity <= 0:
             raise invalid("количество должно быть больше нуля")

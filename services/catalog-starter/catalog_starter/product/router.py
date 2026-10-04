@@ -16,6 +16,14 @@ class CreateProduct(BaseModel):
     stock: int = Field(ge=0)
 
 
+class ChangePrice(BaseModel):
+    price: Decimal = Field(gt=0)
+
+
+class ChangeStock(BaseModel):
+    delta: int
+
+
 class Reserve(BaseModel):
     quantity: int = Field(ge=1)
 
@@ -44,6 +52,16 @@ async def by_id(request: Request, id: uuid.UUID) -> Card:
 async def create(request: Request, body: CreateProduct) -> Card:
     created = await service_of(request).create(body.title, body.price, body.stock)
     return card_of(created)
+
+
+@router.patch("/{id}/price")
+async def change_price(request: Request, id: uuid.UUID, body: ChangePrice) -> Card:
+    return card_of(await service_of(request).change_price(id, body.price))
+
+
+@router.patch("/{id}/stock")
+async def change_stock(request: Request, id: uuid.UUID, body: ChangeStock) -> Card:
+    return card_of(await service_of(request).change_stock(id, body.delta))
 
 
 @router.post("/{id}/reserve")
