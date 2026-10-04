@@ -34,6 +34,9 @@ class ProductService:
     async def change_price(self, product_id: uuid.UUID, new_price: Decimal) -> Product:
         return await self._change(product_id, lambda p: p.change_price(new_price))
 
+    async def apply_discount(self, product_id: uuid.UUID, percent: int) -> Product:
+        return await self._change(product_id, lambda p: p.apply_discount(percent))
+
     async def change_stock(self, product_id: uuid.UUID, delta: int) -> Product:
         return await self._change(product_id, lambda p: p.change_stock(delta))
 

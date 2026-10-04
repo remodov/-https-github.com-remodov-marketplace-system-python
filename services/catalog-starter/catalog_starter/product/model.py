@@ -1,10 +1,14 @@
 import uuid
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import BigInteger, Integer, Numeric, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from .errors import OutOfStockError, invalid
+
+
+MAX_DISCOUNT_PERCENT = 50
+KOPECK = Decimal("0.01")
 
 
 class Base(DeclarativeBase):
@@ -62,6 +66,11 @@ class Product(Base):
         if new_price <= 0:
             raise invalid("цена должна быть больше нуля")
         self._price = new_price
+
+    def apply_discount(self, percent: int) -> None:
+        if percent < 1 or percent > MAX_DISCOUNT_PERCENT:
+            raise invalid(f"скидка допустима от 1 до {MAX_DISCOUNT_PERCENT} процентов, а не {percent}")
+        self._price = (self._price * (100 - percent) / 100).quantize(KOPECK, rounding=ROUND_HALF_UP)
 
     def change_stock(self, delta: int) -> None:
         if delta == 0:
