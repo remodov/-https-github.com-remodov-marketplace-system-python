@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer
 from pydantic.alias_generators import to_camel
 
 from .downstream import DownstreamClient
-from .errors import DownstreamError
+from .errors import DownstreamError, ScreenNotAssembled
 
 PAYMENT_NONE = "NONE"
 
@@ -77,23 +77,12 @@ class ScreenAssembler:
     async def assemble(self, order_id: uuid.UUID, authorization: str) -> OrderScreen:
         order = await self.order.get(f"/api/v1/orders/{order_id}", authorization, OrderReply)
 
-        *items, payment_status = await asyncio.gather(
-            *(self._item(line, authorization) for line in order.items),
-            self._payment_status(order.payment_id, authorization),
-        )
-        return OrderScreen(
-            order_id=order.id,
-            status=order.status,
-            total=order.total,
-            payment_status=payment_status,
-            items=items,
-        )
-
-    async def _item(self, line: OrderLine, authorization: str) -> ScreenItem:
-        card = await self.catalog.get(f"/api/v1/products/{line.product_id}", authorization, ProductCard)
-        return ScreenItem(
-            product_id=line.product_id, title=card.title, quantity=line.quantity, price=card.price
-        )
+        # TODO шаг 13: собрать экран.
+        # Заказ уже прочитан: из него известны товары (order.items) и идентификатор платежа
+        # (order.payment_id). Осталось добрать карточки товаров (self.catalog, модель ProductCard)
+        # и статус платежа (self._payment_status). Эти походы независимы, экран не обязан
+        # ждать их по очереди.
+        raise ScreenNotAssembled(f"шаг 13: экран заказа {order.id} ещё не собирается")
 
     async def _payment_status(self, payment_id: uuid.UUID | None, authorization: str) -> str:
         if payment_id is None:

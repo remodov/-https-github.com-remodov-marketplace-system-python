@@ -1,5 +1,4 @@
 import logging
-import time
 from dataclasses import dataclass
 
 from fastapi.responses import JSONResponse
@@ -31,15 +30,10 @@ class Limiter:
         self.per_minute = per_minute
 
     async def check(self, client: str) -> Decision:
-        key = f"rate:{client}:{int(time.time() // WINDOW_SECONDS)}"
-        used = await self.redis.incr(key)
-        if used == 1:
-            await self.redis.expire(key, WINDOW_SECONDS)
-        return Decision(
-            allowed=used <= self.per_minute,
-            remaining=max(self.per_minute - used, 0),
-            retry_after=WINDOW_SECONDS,
-        )
+        # TODO шаг 13: счётчик запросов клиента в текущем минутном окне.
+        # Ключ должен сам протухать вместе с окном - чистить его отдельной задачей
+        # не нужно. И считать надо на каждого клиента, а не на всех сразу.
+        return Decision(allowed=True, remaining=self.per_minute, retry_after=WINDOW_SECONDS)
 
 
 class RateLimitMiddleware:
