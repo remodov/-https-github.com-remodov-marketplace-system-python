@@ -17,9 +17,10 @@
 | `services/order` | оформление заказов: агрегат `Order`, цены из каталога, клиент с таймаутами, повтором и размыкателем, идемпотентность, outbox, статусная модель и сага отмены | FastAPI, SQLAlchemy 2 Core (async), Alembic, httpx, PyJWT, aiokafka |
 | `services/payment` | платежи: автомат статусов, одна авторизация на заказ, безопасный повторный возврат | FastAPI, asyncpg |
 | `services/notification` | уведомления: потребитель событий заказа с защитой от повторной доставки | FastAPI, SQLAlchemy 2 Core (async), Alembic, aiokafka |
+| `services/bff` | граница системы: экран заказа одним запросом из трёх сервисов, лимит частоты на клиента в Redis | FastAPI, httpx, redis |
 | `contracts` | внешние контракты событий заказа и платежа: AsyncAPI, схемы и pydantic-пакеты для продюсера и потребителей | AsyncAPI 3, pydantic |
 
-Дальше по плану появляются `services/bff` и `web` - по образцу Java- и Go-версий
+Дальше по плану появляется `web` - по образцу Java- и Go-версий
 ([план](docs/practicum/PLAN.md)).
 
 ## С чего начинать
@@ -78,6 +79,15 @@ python -m pytest -q
 uvicorn payment.main:app --port 8186
 ```
 
+BFF из тринадцатого шага ходит в `catalog`, `order` и `payment`, счётчик лимита держит в Redis:
+
+```bash
+pip install -e "services/bff[dev]"
+cd services/bff
+python -m pytest -q
+uvicorn bff.main:app --port 8190
+```
+
 ## Поднять стенд
 
 ```bash
@@ -88,7 +98,7 @@ docker compose -f infra/compose.yaml ps
 | что | порт | зачем |
 |---|---|---|
 | PostgreSQL | 5470 | базы `catalog_starter`, `catalog`, `orders`, `notifications` и `payments` плюс тестовые `*_test` |
-| Redis | 6383 | кэш карточек, шаг 6 |
+| Redis | 6383 | кэш карточек, шаг 6; счётчик лимита частоты, шаг 13 |
 | Kafka | 9097 | события заказа из outbox, шаг 10; события платежа, шаг 11 |
 | MinIO | 9004, 9005 | изображения товаров, шаг 12 |
 
