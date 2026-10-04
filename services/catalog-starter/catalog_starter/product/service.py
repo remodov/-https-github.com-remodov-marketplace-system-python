@@ -33,27 +33,9 @@ class ProductService:
         async with self.uow() as store:
             return await store.by_id(product_id)
 
+    # TODO шаг 6: карточка из кэша, сброс записи при любом изменении товара
     async def card(self, product_id: uuid.UUID) -> Card:
-        key = card_key(product_id)
-        try:
-            cached = await self.cache.get(key)
-        except Exception as error:
-            log.warning("кэш карточек недоступен, читаем из базы: %s", error)
-            cached = None
-        if cached is not None:
-            return Card.model_validate(cached)
-        card = card_of(await self.by_id(product_id))
-        try:
-            await self.cache.set(key, card.model_dump(mode="json"))
-        except Exception as error:
-            log.warning("карточка не попала в кэш: %s", error)
-        return card
-
-    async def _forget(self, product_id: uuid.UUID) -> None:
-        try:
-            await self.cache.delete(card_key(product_id))
-        except Exception as error:
-            log.warning("карточка %s не сброшена из кэша: %s", product_id, error)
+        return card_of(await self.by_id(product_id))
 
     async def create(self, title: str, price: Decimal, stock: int) -> Product:
         product = Product.create(title, price, stock)
@@ -75,7 +57,6 @@ class ProductService:
             product = await store.by_id(product_id)
             command(product)
             await store.save(product)
-        await self._forget(product_id)
         return product
 
     async def reserve(self, product_id: uuid.UUID, quantity: int) -> Product:
@@ -83,5 +64,4 @@ class ProductService:
             product = await store.by_id_for_update(product_id)
             product.reserve(quantity)
             await store.save(product)
-        await self._forget(product_id)
         return product
