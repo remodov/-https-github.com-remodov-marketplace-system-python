@@ -68,9 +68,8 @@ class Product(Base):
         self._price = new_price
 
     def apply_discount(self, percent: int) -> None:
-        if percent < 1 or percent > MAX_DISCOUNT_PERCENT:
-            raise invalid(f"скидка допустима от 1 до {MAX_DISCOUNT_PERCENT} процентов, а не {percent}")
-        self._price = (self._price * (100 - percent) / 100).quantize(KOPECK, rounding=ROUND_HALF_UP)
+        # TODO шаг 4: процент от 1 до MAX_DISCOUNT_PERCENT, иначе InvalidError с пределом; цена с округлением до копеек
+        pass
 
     def change_stock(self, delta: int) -> None:
         if delta == 0:

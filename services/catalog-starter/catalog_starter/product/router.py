@@ -20,8 +20,7 @@ class ChangePrice(BaseModel):
     price: Decimal = Field(gt=0)
 
 
-class ApplyDiscount(BaseModel):
-    percent: int
+# TODO шаг 4: модель ApplyDiscount с обязательным целым percent
 
 
 class ChangeStock(BaseModel):
@@ -63,9 +62,7 @@ async def change_price(request: Request, id: uuid.UUID, body: ChangePrice) -> Ca
     return card_of(await service_of(request).change_price(id, body.price))
 
 
-@router.patch("/{id}/discount")
-async def apply_discount(request: Request, id: uuid.UUID, body: ApplyDiscount) -> Card:
-    return card_of(await service_of(request).apply_discount(id, body.percent))
+# TODO шаг 4: PATCH /{id}/discount с телом {"percent": N}
 
 
 @router.patch("/{id}/stock")
