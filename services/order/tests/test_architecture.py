@@ -3,11 +3,19 @@ from pathlib import Path
 
 import order
 from order.adapter.outbound.catalog.client import CatalogClient
+from order.adapter.outbound.persistence.idempotency_repository import SqlAlchemyIdempotencyKeys
 from order.adapter.outbound.persistence.order_repository import SqlAlchemyOrderRepository
 from order.adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from order.adapter.outbound.system.system import SystemClock, UuidGenerator
 from order.bootstrap.wire import catalog_settings
-from order.core.order.port.out import CatalogGateway, Clock, IdGenerator, OrderRepository, UnitOfWork
+from order.core.order.port.out import (
+    CatalogGateway,
+    Clock,
+    IdempotencyKeys,
+    IdGenerator,
+    OrderRepository,
+    UnitOfWork,
+)
 
 PACKAGE = "order"
 PACKAGE_ROOT = Path(order.__file__).resolve().parent
@@ -92,6 +100,7 @@ def test_outbound_adapters_do_not_import_each_other():
 async def test_adapters_satisfy_ports():
     sessions = object()
     assert isinstance(SqlAlchemyOrderRepository(sessions), OrderRepository)
+    assert isinstance(SqlAlchemyIdempotencyKeys(sessions), IdempotencyKeys)
     assert isinstance(SqlAlchemyUnitOfWork(sessions), UnitOfWork)
     assert isinstance(SystemClock(), Clock)
     assert isinstance(UuidGenerator(), IdGenerator)

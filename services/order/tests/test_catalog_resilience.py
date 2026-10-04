@@ -28,7 +28,7 @@ async def test_catalog_when_first_answer_hangs_retry_saves_the_order(start_stand
     stand = await start_stand(CatalogClient(stand_catalog_settings(fake.url)))
     await stand.clear_tables()
 
-    res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), new_order())
+    res = await stand.post_order(customer_token(uuid.uuid4()), new_order())
 
     assert res.status_code == 201, res.text
     assert await stand.orders_in_db() == 1
@@ -40,7 +40,7 @@ async def test_catalog_when_down_order_is_not_created_and_error_is_domain(start_
     stand = await start_stand(CatalogClient(stand_catalog_settings(fake.url)))
     await stand.clear_tables()
 
-    res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), new_order())
+    res = await stand.post_order(customer_token(uuid.uuid4()), new_order())
 
     assert res.status_code == 503, res.text
     expect_code(res, "SERVICE_DEGRADED")
@@ -58,7 +58,7 @@ async def test_catalog_when_slow_is_cut_off_by_timeout(start_stand, start_catalo
     await stand.clear_tables()
 
     started = time.monotonic()
-    res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), new_order())
+    res = await stand.post_order(customer_token(uuid.uuid4()), new_order())
     spent = time.monotonic() - started
 
     assert res.status_code == 503, res.text
@@ -74,11 +74,11 @@ async def test_catalog_when_down_repeatedly_breaker_stops_calling_it(start_stand
     await stand.clear_tables()
 
     for _ in range(3):
-        res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), new_order())
+        res = await stand.post_order(customer_token(uuid.uuid4()), new_order())
         assert res.status_code == 503, res.text
     assert fake.hits == 6, f"к каталогу ушло {fake.hits} запросов, ожидали 6"
 
-    res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), new_order())
+    res = await stand.post_order(customer_token(uuid.uuid4()), new_order())
 
     assert res.status_code == 503, res.text
     expect_code(res, "SERVICE_DEGRADED")

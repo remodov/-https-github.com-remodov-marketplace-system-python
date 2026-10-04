@@ -19,7 +19,7 @@ async def test_create_order_when_catalog_answers_stores_order_with_catalog_price
     await stand.clear_tables()
     customer, seller, product = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 
-    res = await stand.call("POST", "/api/v1/orders", customer_token(customer), order_body(product, seller, 2))
+    res = await stand.post_order(customer_token(customer), order_body(product, seller, 2))
 
     assert res.status_code == 201, res.text
     body = res.json()
@@ -34,9 +34,7 @@ async def test_create_order_when_product_unknown_returns_404_without_retry(start
     stand = await start_stand(CatalogClient(stand_catalog_settings(fake.url)))
     await stand.clear_tables()
 
-    res = await stand.call(
-        "POST", "/api/v1/orders", customer_token(uuid.uuid4()), order_body(uuid.uuid4(), uuid.uuid4(), 1)
-    )
+    res = await stand.post_order(customer_token(uuid.uuid4()), order_body(uuid.uuid4(), uuid.uuid4(), 1))
 
     assert res.status_code == 404, res.text
     expect_code(res, "PRODUCT_NOT_FOUND")
@@ -54,7 +52,7 @@ async def test_create_order_when_two_sellers_is_rejected_before_catalog(start_st
         '"shippingAddress":{"country":"RU","city":"Москва","street":"Тверская, 1","postalCode":"125009"}}'
     )
 
-    res = await stand.call("POST", "/api/v1/orders", customer_token(uuid.uuid4()), body)
+    res = await stand.post_order(customer_token(uuid.uuid4()), body)
 
     assert res.status_code == 400, res.text
     expect_code(res, "MULTI_SELLER_NOT_SUPPORTED")
@@ -66,7 +64,7 @@ async def test_create_order_when_anonymous_is_rejected(start_stand, start_catalo
     fake = await start_catalog(answering("100.00"))
     stand = await start_stand(CatalogClient(stand_catalog_settings(fake.url)))
 
-    res = await stand.call("POST", "/api/v1/orders", "", order_body(uuid.uuid4(), uuid.uuid4(), 1))
+    res = await stand.post_order("", order_body(uuid.uuid4(), uuid.uuid4(), 1))
 
     assert res.status_code == 401, res.text
     expect_code(res, "TOKEN_MISSING")
@@ -78,9 +76,7 @@ async def test_get_order_when_foreign_customer_returns_404_but_admin_sees(start_
     stand = await start_stand(CatalogClient(stand_catalog_settings(fake.url)))
     await stand.clear_tables()
     owner = uuid.uuid4()
-    created = await stand.call(
-        "POST", "/api/v1/orders", customer_token(owner), order_body(uuid.uuid4(), uuid.uuid4(), 1)
-    )
+    created = await stand.post_order(customer_token(owner), order_body(uuid.uuid4(), uuid.uuid4(), 1))
     assert created.status_code == 201, created.text
     path = f"/api/v1/orders/{created.json()['id']}"
 

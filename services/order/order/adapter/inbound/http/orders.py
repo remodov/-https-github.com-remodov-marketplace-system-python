@@ -1,12 +1,21 @@
+import hashlib
 import uuid
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, Header, Response
+from pydantic import StringConstraints
 
 from ....core.order.query.queries import GetOrder, QueryHandler
 from ....core.order.usecase.create_order import CreateOrder, CreateOrderHandler, OrderLine
 from ....core.security.principal import Principal, Role
 from .auth import Authenticator, optional_principal, require_roles
 from .schemas import CreateOrderRequest, OrderResponse, address_of, response_of
+
+IdempotencyKey = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=128),
+    Header(alias="Idempotency-Key"),
+]
 
 
 def order_router(auth: Authenticator, create: CreateOrderHandler, queries: QueryHandler) -> APIRouter:
@@ -16,10 +25,11 @@ def order_router(auth: Authenticator, create: CreateOrderHandler, queries: Query
     @router.post("", status_code=201)
     async def create_order(
         body: CreateOrderRequest,
+        idempotency_key: IdempotencyKey,
         response: Response,
         principal: Principal = Depends(customer_or_admin),
     ) -> OrderResponse:
-        order = await create.handle(
+        result = await create.handle(
             CreateOrder(
                 customer=principal,
                 lines=[
@@ -27,10 +37,15 @@ def order_router(auth: Authenticator, create: CreateOrderHandler, queries: Query
                     for item in body.items
                 ],
                 shipping_address=address_of(body.shipping_address),
+                idempotency_key=idempotency_key,
+                request_hash=request_hash(body),
             )
         )
-        response.headers["Location"] = f"/api/v1/orders/{order.id}"
-        return response_of(order)
+        if not result.created:
+            response.status_code = 200
+            return response_of(result.order)
+        response.headers["Location"] = f"/api/v1/orders/{result.order.id}"
+        return response_of(result.order)
 
     @router.get("/{order_id}")
     async def get_order(
@@ -41,3 +56,7 @@ def order_router(auth: Authenticator, create: CreateOrderHandler, queries: Query
         return response_of(order)
 
     return router
+
+
+def request_hash(body: CreateOrderRequest) -> str:
+    return hashlib.sha256(body.model_dump_json(by_alias=True).encode()).hexdigest()

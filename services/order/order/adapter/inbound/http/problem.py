@@ -71,7 +71,7 @@ def challenge(error: AppError) -> dict[str, str] | None:
 def field_path(location: tuple[object, ...]) -> str:
     path = ""
     for part in location:
-        if part == "body" and not path:
+        if part in ("body", "header") and not path:
             continue
         if isinstance(part, int):
             path += f"[{part}]"

@@ -3,9 +3,9 @@ info:
   title: Order Service API
   description: |
     REST API сервиса заказов (Tier C) на Python и FastAPI. Покрывает спеку `docs/spec/order-service.md`
-    в объёме восьмого шага практикума: создание черновика заказа и чтение заказа.
+    в объёме девятого шага практикума: идемпотентное создание черновика заказа и чтение заказа.
     Ошибки - RFC 9457 Problem Details (`application/problem+json`), `type` вида `urn:problem:order:<CODE>`.
-  version: 0.8.0
+  version: 0.9.0
 
 servers:
   - url: http://localhost:8181
@@ -22,6 +22,13 @@ paths:
       description: |
         Цены позиций берутся из Catalog Service синхронно. Один заказ - товары одного продавца (BR-014).
         Если каталог недоступен, заказ не создаётся и возвращается `503 SERVICE_DEGRADED`.
+        Повтор с тем же `Idempotency-Key` и тем же телом отдаёт прежний заказ ответом 200 (BR-010).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          description: Ключ идемпотентности от клиента, до 128 символов; обычно UUID
+          schema: { type: string, maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -38,8 +45,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Order'
+        '200':
+          description: Повтор запроса с тем же Idempotency-Key - прежний заказ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Order'
         '400':
-          description: VALIDATION_ERROR, MALFORMED_REQUEST, EMPTY_ORDER, MULTI_SELLER_NOT_SUPPORTED
+          description: VALIDATION_ERROR (в том числе без Idempotency-Key), MALFORMED_REQUEST, EMPTY_ORDER, MULTI_SELLER_NOT_SUPPORTED
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
@@ -55,6 +68,11 @@ paths:
               schema: { $ref: '#/components/schemas/Problem' }
         '404':
           description: PRODUCT_NOT_FOUND - каталог не нашёл товар
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '409':
+          description: IDEMPOTENCY_KEY_CONFLICT - тот же ключ с другим телом
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }

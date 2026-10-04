@@ -31,3 +31,9 @@ class IdGenerator(Protocol):
 @runtime_checkable
 class UnitOfWork(Protocol):
     def begin(self) -> AbstractAsyncContextManager[None]: ...
+
+
+@runtime_checkable
+class IdempotencyKeys(Protocol):
+    async def find(self, key: str, request_hash: str) -> uuid.UUID | None: ...
+    async def claim(self, key: str, request_hash: str, order_id: uuid.UUID, now: datetime) -> bool: ...

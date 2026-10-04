@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from ...errors import invalid, not_found
 from ...security.principal import Principal
 from ..aggregate.order import Address, Item, Order
-from ..port.out import CatalogGateway, Clock, IdGenerator, OrderRepository, UnitOfWork
+from ..port.out import CatalogGateway, Clock, IdempotencyKeys, IdGenerator, OrderRepository, UnitOfWork
 
 
 @dataclass(frozen=True)
@@ -20,6 +20,18 @@ class CreateOrder:
     customer: Principal
     lines: Sequence[OrderLine]
     shipping_address: Address
+    idempotency_key: str
+    request_hash: str
+
+
+@dataclass(frozen=True)
+class CreateOrderResult:
+    order: Order
+    created: bool
+
+
+class KeyTakenByOther(Exception):
+    pass
 
 
 class CreateOrderHandler:
@@ -27,20 +39,45 @@ class CreateOrderHandler:
         self,
         orders: OrderRepository,
         catalog: CatalogGateway,
+        keys: IdempotencyKeys,
         clock: Clock,
         ids: IdGenerator,
         uow: UnitOfWork,
     ) -> None:
         self.orders = orders
         self.catalog = catalog
+        self.keys = keys
         self.clock = clock
         self.ids = ids
         self.uow = uow
 
-    async def handle(self, cmd: CreateOrder) -> Order:
+    async def handle(self, cmd: CreateOrder) -> CreateOrderResult:
         if not cmd.lines:
             raise invalid("EMPTY_ORDER", "В заказе нет ни одной позиции")
         require_single_seller(cmd.lines)
+        existing = await self.keys.find(cmd.idempotency_key, cmd.request_hash)
+        if existing is not None:
+            return await self.replay(existing)
+        order = await self.build(cmd)
+        try:
+            async with self.uow.begin():
+                await self.orders.insert(order)
+                claimed = await self.keys.claim(
+                    cmd.idempotency_key, cmd.request_hash, order.id, order.created_at
+                )
+                if not claimed:
+                    raise KeyTakenByOther
+        except KeyTakenByOther:
+            winner = await self.keys.find(cmd.idempotency_key, cmd.request_hash)
+            if winner is None:
+                raise
+            return await self.replay(winner)
+        return CreateOrderResult(order, created=True)
+
+    async def replay(self, order_id: uuid.UUID) -> CreateOrderResult:
+        return CreateOrderResult(await self.orders.by_id(order_id), created=False)
+
+    async def build(self, cmd: CreateOrder) -> Order:
         prices = await self.catalog.prices(product_ids_of(cmd.lines))
         items = []
         for line in cmd.lines:
@@ -50,12 +87,9 @@ class CreateOrderHandler:
             items.append(
                 Item.create(self.ids.new_id(), line.product_id, line.seller_id, line.quantity, price)
             )
-        order = Order.create(
+        return Order.create(
             self.ids.new_id(), cmd.customer.sub, items, cmd.shipping_address, self.clock.now()
         )
-        async with self.uow.begin():
-            await self.orders.insert(order)
-        return order
 
 
 def require_single_seller(lines: Sequence[OrderLine]) -> None:

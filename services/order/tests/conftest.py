@@ -50,8 +50,10 @@ class Stand:
     def engine(self) -> AsyncEngine:
         return self.app.state.engine
 
-    async def call(self, method: str, path: str, token: str = "", body: str = "") -> httpx.Response:
-        headers = {}
+    async def call(
+        self, method: str, path: str, token: str = "", body: str = "", headers: dict[str, str] | None = None
+    ) -> httpx.Response:
+        headers = dict(headers or {})
         if body:
             headers["Content-Type"] = "application/json"
         if token:
@@ -60,9 +62,13 @@ class Stand:
             method, path, content=body.encode() if body else None, headers=headers
         )
 
+    async def post_order(self, token: str, body: str, idempotency_key: str | None = None) -> httpx.Response:
+        key = idempotency_key or str(uuid.uuid4())
+        return await self.call("POST", "/api/v1/orders", token, body, {"Idempotency-Key": key})
+
     async def clear_tables(self) -> None:
         async with self.engine.begin() as connection:
-            await connection.execute(text("TRUNCATE order_items, orders"))
+            await connection.execute(text("TRUNCATE idempotency_keys, order_items, orders"))
 
     async def orders_in_db(self) -> int:
         async with self.engine.connect() as connection:

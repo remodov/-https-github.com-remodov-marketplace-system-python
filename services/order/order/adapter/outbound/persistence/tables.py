@@ -1,4 +1,4 @@
-from sqlalchemy import CHAR, Column, DateTime, ForeignKey, Integer, MetaData, Numeric, Table, Uuid
+from sqlalchemy import CHAR, Column, DateTime, ForeignKey, Integer, MetaData, Numeric, String, Table, Uuid
 from sqlalchemy.dialects import postgresql
 
 metadata = MetaData()
@@ -42,4 +42,13 @@ order_items = Table(
     Column("seller_id", Uuid, nullable=False),
     Column("quantity", Integer, nullable=False),
     Column("unit_price", Numeric(12, 2), nullable=False),
+)
+
+idempotency_keys = Table(
+    "idempotency_keys",
+    metadata,
+    Column("idempotency_key", String(128), primary_key=True),
+    Column("request_hash", String(64), nullable=False),
+    Column("order_id", Uuid, ForeignKey("orders.id"), nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False),
 )

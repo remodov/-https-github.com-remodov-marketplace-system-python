@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from ..adapter.inbound.http.auth import Authenticator, JwtAuthenticator, LocalTokens
 from ..adapter.outbound.catalog.client import CatalogClient, CatalogSettings
+from ..adapter.outbound.persistence.idempotency_repository import SqlAlchemyIdempotencyKeys
 from ..adapter.outbound.persistence.order_repository import SqlAlchemyOrderRepository
 from ..adapter.outbound.persistence.unit_of_work import SqlAlchemyUnitOfWork
 from ..adapter.outbound.system.system import SystemClock, UuidGenerator
@@ -47,9 +48,10 @@ def wire_handlers(sessions: async_sessionmaker, catalog: CatalogGateway, deps: D
     clock = deps.clock or SystemClock()
     ids = deps.ids or UuidGenerator()
     orders = SqlAlchemyOrderRepository(sessions)
+    keys = SqlAlchemyIdempotencyKeys(sessions)
     uow = SqlAlchemyUnitOfWork(sessions)
     return Handlers(
-        create=CreateOrderHandler(orders, catalog, clock, ids, uow),
+        create=CreateOrderHandler(orders, catalog, keys, clock, ids, uow),
         queries=QueryHandler(orders),
     )
 
